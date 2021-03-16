@@ -5,7 +5,9 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.backend import max as reduce_max
-from GeoFlow.SeismicUtilities import build_time_to_depth_converter
+from GeoFlow.SeismicUtilities import (
+    build_time_to_depth_converter, build_vrms_to_vint_converter,
+)
 from DefinedNN.RCNN2D import (
     RCNN2D, Hyperparameters, build_encoder, build_rcnn, build_rnn,
 )
@@ -87,43 +89,17 @@ class RCNN2D(RCNN2D):
             name="vrms",
         )
 
-        self.rnn['vint'] = build_rnn(
-            units=200,
-            input_shape=input_shape,
-            batch_size=batch_size,
-            name="rnn_vint",
-        )
-        if params.freeze_to in ['vint', 'vdepth']:
-            self.rnn['vint'].trainable = False
-
-        input_shape = self.rnn['vint'].output_shape
-        if params.use_cnn:
-            self.cnn['vint'] = Conv2D(
-                params.cnn_filters, params.cnn_kernel,
-                dilation_rate=params.cnn_dilation,
-                padding='same',
-                input_shape=input_shape,
-                batch_size=batch_size,
-                name="cnn_vint",
-            )
-            if params.freeze_to in ['vint', 'vdepth']:
-                self.cnn['vint'].trainable = False
-            input_shape = input_shape[:-1] + (params.cnn_filters,)
-
-        self.decoder['vint'] = Conv2D(
-            1,
-            params.decode_kernel,
-            padding='same',
-            activation='sigmoid',
-            input_shape=input_shape,
-            batch_size=batch_size,
-            name="vint"
+        model_shape = input_shape[1:-1] + (1,)
+        self.vrms_to_vint = build_vrms_to_vint_converter(
+            self.dataset,
+            model_shape,
+            batch_size,
+            name="vint",
         )
 
-        vint_shape = input_shape[1:-1] + (1,)
         self.time_to_depth = build_time_to_depth_converter(
             self.dataset,
-            vint_shape,
+            model_shape,
             batch_size,
             name="vdepth",
         )
@@ -145,13 +121,7 @@ class RCNN2D(RCNN2D):
             data_stream = self.cnn['vrms'](data_stream)
 
         outputs['vrms'] = self.decoder['vrms'](data_stream)
-
-        data_stream = self.rnn['vint'](data_stream)
-        if params.use_cnn:
-            data_stream = self.cnn['vint'](data_stream)
-
-        data_stream = self.rnn['vint'](data_stream)
-        outputs['vint'] = self.decoder['vint'](data_stream)
+        outputs['vint'] = self.vrms_to_vint(outputs['vrms'])
         outputs['vdepth'] = self.time_to_depth(outputs['vint'])
 
         return {out: outputs[out] for out in self.tooutputs}
