@@ -116,7 +116,7 @@ class RCNN2D(RCNN2D):
         outputs['vrms'] = self.decoder['vrms'](outputs['vint'])
         outputs['vdepth'] = self.decoder['vdepth'](outputs['vint'])
 
-        return {out: outputs[out] for out in self.tooutputs.keys()}
+        return {out: outputs[out] for out in self.tooutputs}
 
 
 class Hyperparameters(Hyperparameters):
