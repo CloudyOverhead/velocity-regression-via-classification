@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """"""
 
+import numpy as np
 from tensorflow.keras.layers import Conv2D
 from GeoFlow.SeismicUtilities import (
     build_time_to_depth_converter, build_vint_to_vrms_converter,
@@ -63,9 +64,11 @@ class RCNN2D(RCNN2D):
             name="ref",
         )
 
+        shape_before_pooling = np.array(self.rvcnn.output_shape)
+        shape_after_pooling = tuple(shape_before_pooling[[0, 1, 3, 4]])
         self.rnn = build_rnn(
             units=200,
-            input_shape=self.rvcnn.output_shape,
+            input_shape=shape_after_pooling,
             batch_size=batch_size,
             name="rnn",
         )
