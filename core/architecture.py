@@ -79,19 +79,6 @@ class RCNN2D(RCNN2D):
             self.rnn['vrms'].trainable = False
 
         input_shape = self.rnn['vrms'].output_shape
-        if params.use_cnn:
-            self.cnn['vrms'] = Conv2D(
-                params.cnn_filters, params.cnn_kernel,
-                dilation_rate=params.cnn_dilation,
-                padding='same',
-                input_shape=input_shape,
-                batch_size=batch_size,
-                name="cnn_vrms",
-            )
-            if params.freeze_to in ['vrms', 'vint', 'vdepth']:
-                self.cnn['vrms'].trainable = False
-            input_shape = input_shape[:-1] + (params.cnn_filters,)
-
         self.decoder['vrms'] = Conv2D(
             1,
             params.decode_kernel,
