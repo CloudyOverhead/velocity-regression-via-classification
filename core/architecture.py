@@ -1,12 +1,9 @@
 # -*- coding: utf-8 -*-
 """"""
 
-import numpy as np
-import tensorflow as tf
 from tensorflow.keras.layers import Conv2D
-from tensorflow.keras.backend import max as reduce_max
 from GeoFlow.SeismicUtilities import (
-    build_time_to_depth_converter, build_vrms_to_vint_converter,
+    build_time_to_depth_converter, build_vint_to_vrms_converter,
 )
 from DefinedNN.RCNN2D import (
     RCNN2D, Hyperparameters, build_encoder, build_rcnn, build_rnn,
@@ -19,8 +16,6 @@ class RCNN2D(RCNN2D):
         batch_size = self.params.batch_size
 
         self.decoder = {}
-        self.rnn = {}
-        self.cnn = {}
 
         self.encoder = build_encoder(
             kernels=params.encoder_kernels,
@@ -29,7 +24,7 @@ class RCNN2D(RCNN2D):
             input_shape=inputs['shotgather'].shape,
             batch_size=batch_size,
         )
-        if params.freeze_to in ['ref', 'vrms', 'vint', 'vdepth']:
+        if params.freeze_to in ['encoder', 'rcnn', 'rvcnn', 'rnn']:
             self.encoder.trainable = False
 
         self.rcnn = build_rcnn(
@@ -39,12 +34,12 @@ class RCNN2D(RCNN2D):
             dilation_rate=params.rcnn_dilation,
             input_shape=self.encoder.output_shape,
             batch_size=batch_size,
-            name="time_rcnn",
+            name="rcnn",
         )
-        if params.freeze_to in ['ref', 'vrms', 'vint', 'vdepth']:
+        if params.freeze_to in ['rcnn', 'rvcnn', 'rnn']:
             self.rcnn.trainable = False
 
-        self.rcnn_pooling = build_rcnn(
+        self.rvcnn = build_rcnn(
             reps=6,
             kernel=(1, 2, 1),
             qty_filters=params.rcnn_filters,
@@ -53,80 +48,72 @@ class RCNN2D(RCNN2D):
             padding='valid',
             input_shape=self.rcnn.output_shape,
             batch_size=batch_size,
-            name="rcnn_pooling",
+            name="rvcnn",
         )
-
-        shape_before_pooling = np.array(self.rcnn.output_shape)
-        shape_after_pooling = tuple(shape_before_pooling[[0, 1, 3, 4]])
+        if params.freeze_to in ['rvcnn', 'rnn']:
+            self.rvcnn.trainable = False
 
         self.decoder['ref'] = Conv2D(
             1,
             params.decode_ref_kernel,
             padding='same',
             activation='sigmoid',
-            input_shape=shape_after_pooling,
+            input_shape=self.rvcnn.output_shape,
             batch_size=batch_size,
             name="ref",
         )
 
-        self.rnn['vrms'] = build_rnn(
+        self.rnn = build_rnn(
             units=200,
-            input_shape=shape_after_pooling,
+            input_shape=self.rvcnn.output_shape,
             batch_size=batch_size,
-            name="rnn_vrms",
+            name="rnn",
         )
-        if params.freeze_to in ['vrms', 'vint', 'vdepth']:
-            self.rnn['vrms'].trainable = False
+        if params.freeze_to in ['rnn']:
+            self.rnn.trainable = False
 
-        input_shape = self.rnn['vrms'].output_shape
-        self.decoder['vrms'] = Conv2D(
+        input_shape = self.rnn.output_shape
+        self.decoder['vint'] = Conv2D(
             1,
             params.decode_kernel,
             padding='same',
             input_shape=input_shape,
             batch_size=batch_size,
             use_bias=False,
-            name="vrms",
-        )
-
-        model_shape = input_shape[1:-1] + (1,)
-        self.vrms_to_vint = build_vrms_to_vint_converter(
-            self.dataset,
-            model_shape,
-            batch_size,
             name="vint",
         )
 
         vint_shape = input_shape[1:-1] + (1,)
-        self.time_to_depth = build_time_to_depth_converter(
+        self.decoder['vrms'] = build_vint_to_vrms_converter(
+            self.dataset,
+            vint_shape,
+            batch_size,
+            name="vrms",
+        )
+        self.decoder['vdepth'] = build_time_to_depth_converter(
             self.dataset,
             vint_shape,
             batch_size,
             name="vdepth",
         )
 
-    def call(self, inputs: dict):
-        params = self.params
-
+    def call(self, inputs):
         outputs = {}
 
         data_stream = self.encoder(inputs["shotgather"])
         data_stream = self.rcnn(data_stream)
-        data_stream = self.rcnn_pooling(data_stream)
-        with tf.name_scope("global_pooling"):
-            data_stream = reduce_max(data_stream, axis=2, keepdims=False)
+        data_stream = self.rvcnn(data_stream)
+        data_stream = data_stream[:, :, 0]
 
         outputs['ref'] = self.decoder['ref'](data_stream)
 
-        data_stream = self.rnn['vrms'](data_stream)
-        if params.use_cnn:
-            data_stream = self.cnn['vrms'](data_stream)
+        data_stream = self.rnn(data_stream)
 
-        outputs['vrms'] = self.decoder['vrms'](data_stream)
-        outputs['vint'] = self.vrms_to_vint(outputs['vrms'])
-        outputs['vdepth'] = self.time_to_depth(outputs['vint'])
+        outputs['vint'] = self.decoder['vint'](data_stream)
+        outputs['vrms'] = self.decoder['vrms'](outputs['vint'])
+        outputs['vdepth'] = self.decoder['vdepth'](outputs['vint'])
 
-        return {out: outputs[out] for out in self.tooutputs}
+        return {out: outputs[out] for out in self.tooutputs.keys()}
 
 
 class Hyperparameters(Hyperparameters):
