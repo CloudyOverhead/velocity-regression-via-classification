@@ -5,7 +5,7 @@ from tensorflow.keras.layers import Conv2D
 from GeoFlow.SeismicUtilities import (
     build_time_to_depth_converter, build_vint_to_vrms_converter,
 )
-from DefinedNN.RCNN2D import (
+from GeoFlow.DefinedNN.RCNN2D import (
     RCNN2D, Hyperparameters, build_encoder, build_rcnn, build_rnn,
 )
 
