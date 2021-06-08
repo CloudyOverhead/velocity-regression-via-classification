@@ -44,18 +44,31 @@ class RCNN2D(RCNN2D):
         if params.freeze_to in ['ref', 'vrms', 'vint', 'vdepth']:
             self.rcnn.trainable = False
 
+        self.rcnn_pooling = build_rcnn(
+            reps=6,
+            kernel=(1, 2, 1),
+            qty_filters=params.rcnn_filters,
+            dilation_rate=(1, 1, 1),
+            strides=(1, 2, 1),
+            padding='valid',
+            input_shape=self.rcnn.output_shape,
+            batch_size=batch_size,
+            name="rcnn_pooling",
+        )
+
+        shape_before_pooling = np.array(self.rcnn.output_shape)
+        shape_after_pooling = tuple(shape_before_pooling[[0, 1, 3, 4]])
+
         self.decoder['ref'] = Conv2D(
             1,
             params.decode_ref_kernel,
             padding='same',
             activation='sigmoid',
-            input_shape=self.rcnn.output_shape,
+            input_shape=shape_after_pooling,
             batch_size=batch_size,
             name="ref",
         )
 
-        shape_before_pooling = np.array(self.rcnn.output_shape)
-        shape_after_pooling = tuple(shape_before_pooling[[0, 1, 3, 4]])
         self.rnn['vrms'] = build_rnn(
             units=200,
             input_shape=shape_after_pooling,
@@ -83,9 +96,9 @@ class RCNN2D(RCNN2D):
             1,
             params.decode_kernel,
             padding='same',
-            activation='sigmoid',
             input_shape=input_shape,
             batch_size=batch_size,
+            use_bias=False,
             name="vrms",
         )
 
@@ -97,9 +110,10 @@ class RCNN2D(RCNN2D):
             name="vint",
         )
 
+        vint_shape = input_shape[1:-1] + (1,)
         self.time_to_depth = build_time_to_depth_converter(
             self.dataset,
-            model_shape,
+            vint_shape,
             batch_size,
             name="vdepth",
         )
@@ -111,6 +125,7 @@ class RCNN2D(RCNN2D):
 
         data_stream = self.encoder(inputs["shotgather"])
         data_stream = self.rcnn(data_stream)
+        data_stream = self.rcnn_pooling(data_stream)
         with tf.name_scope("global_pooling"):
             data_stream = reduce_max(data_stream, axis=2, keepdims=False)
 
