@@ -4,7 +4,6 @@
 from os.path import join, abspath
 
 import numpy as np
-import tensorflow as tf
 from tensorflow.keras.layers import Conv2D
 from GeoFlow.SeismicUtilities import (
     build_time_to_depth_converter, build_vint_to_vrms_converter,
@@ -28,7 +27,7 @@ class RCNN2D(RCNN2D):
             input_shape=inputs['shotgather'].shape,
             batch_size=batch_size,
         )
-        if params.freeze_to in ['encoder', 'rcnn', 'rnn']:
+        if params.freeze_to in ['encoder', 'rcnn', 'rvcnn', 'rnn']:
             self.encoder.trainable = False
 
         self.rcnn = build_rcnn(
@@ -40,21 +39,35 @@ class RCNN2D(RCNN2D):
             batch_size=batch_size,
             name="rcnn",
         )
-        if params.freeze_to in ['rcnn', 'rnn']:
+        if params.freeze_to in ['rcnn', 'rvcnn', 'rnn']:
             self.rcnn.trainable = False
 
-        shape_before_pooling = np.array(self.rcnn.output_shape)
-        shape_after_pooling = tuple(shape_before_pooling[[0, 1, 3, 4]])
+        self.rvcnn = build_rcnn(
+            reps=6,
+            kernel=(1, 2, 1),
+            qty_filters=params.rcnn_filters,
+            dilation_rate=(1, 1, 1),
+            strides=(1, 2, 1),
+            padding='valid',
+            input_shape=self.rcnn.output_shape,
+            batch_size=batch_size,
+            name="rvcnn",
+        )
+        if params.freeze_to in ['rvcnn', 'rnn']:
+            self.rvcnn.trainable = False
+
         self.decoder['ref'] = Conv2D(
             1,
             params.decode_ref_kernel,
             padding='same',
             activation='sigmoid',
-            input_shape=shape_after_pooling,
+            input_shape=self.rvcnn.output_shape,
             batch_size=batch_size,
             name="ref",
         )
 
+        shape_before_pooling = np.array(self.rvcnn.output_shape)
+        shape_after_pooling = tuple(shape_before_pooling[[0, 1, 3, 4]])
         self.rnn = build_rnn(
             units=200,
             input_shape=shape_after_pooling,
@@ -94,7 +107,8 @@ class RCNN2D(RCNN2D):
 
         data_stream = self.encoder(inputs["shotgather"])
         data_stream = self.rcnn(data_stream)
-        data_stream = tf.reduce_max(data_stream, axis=2)
+        data_stream = self.rvcnn(data_stream)
+        data_stream = data_stream[:, :, 0]
 
         outputs['ref'] = self.decoder['ref'](data_stream)
 
