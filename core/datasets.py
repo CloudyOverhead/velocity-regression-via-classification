@@ -3,6 +3,7 @@
 
 from os.path import abspath
 
+import numpy as np
 from GeoFlow.GeoDataset import GeoDataset
 from GeoFlow.DefinedDataset.Dataset2Dtest import Dataset2Dtest
 from GeoFlow.EarthModel import MarineModel
@@ -17,7 +18,8 @@ class Dataset(GeoDataset):
 class Test2D(Dataset2Dtest):
     basepath = abspath("datasets")
 
-    def __init__(self, noise=False):
+    def __init__(self, params, noise=False):
+        self.params = params
         super().__init__()
         self.trainsize = 5000
         self.testsize = 50
@@ -26,10 +28,35 @@ class Test2D(Dataset2Dtest):
         model, acquire, inputs, outputs = super().set_dataset()
         acquire.dg = 4
         acquire.ds = 16
+
+        inputs = {ShotGather.name: ShotGather(model=model, acquire=acquire)}
+        bins = self.params.decode_bins
+        outputs = {
+            Reftime.name: Reftime(model=model, acquire=acquire),
+            Vrms.name: Vrms(model=model, acquire=acquire, bins=bins),
+            Vint.name: Vint(model=model, acquire=acquire, bins=bins),
+            Vdepth.name: Vdepth(model=model, acquire=acquire, bins=bins),
+        }
+        for name in inputs:
+            inputs[name].train_on_shots = True
+        for name in outputs:
+            outputs[name].train_on_shots = True
+            outputs[name].identify_direct = False
         return model, acquire, inputs, outputs
 
 
 class Article1D(Dataset):
+    def __init__(self, params, noise=False):
+        self.params = params
+        super().__init__()
+        if noise:
+            for input in self.inputs.values():
+                input.random_static = True
+                input.random_static_max = 1
+                input.random_noise = True
+                input.random_noise_max = 0.02
+                input.random_time_scaling = True
+
     def set_dataset(self):
         self.trainsize = 5000
         self.validatesize = 0
@@ -68,10 +95,13 @@ class Article1D(Dataset):
         acquire.configuration = 'inline'
 
         inputs = {ShotGather.name: ShotGather(model=model, acquire=acquire)}
-        outputs = {Reftime.name: Reftime(model=model, acquire=acquire),
-                   Vrms.name: Vrms(model=model, acquire=acquire),
-                   Vint.name: Vint(model=model, acquire=acquire),
-                   Vdepth.name: Vdepth(model=model, acquire=acquire)}
+        bins = self.params.decode_bins
+        outputs = {
+            Reftime.name: Reftime(model=model, acquire=acquire),
+            Vrms.name: Vrms(model=model, acquire=acquire, bins=bins),
+            Vint.name: Vint(model=model, acquire=acquire, bins=bins),
+            Vdepth.name: Vdepth(model=model, acquire=acquire, bins=bins),
+        }
 
         for input in inputs.values():
             input.train_on_shots = True  # 1D shots are CMPs.
@@ -81,16 +111,6 @@ class Article1D(Dataset):
             output.identify_direct = False
 
         return model, acquire, inputs, outputs
-
-    def __init__(self, noise=False):
-        super().__init__()
-        if noise:
-            for input in self.inputs.values():
-                input.random_static = True
-                input.random_static_max = 1
-                input.random_noise = True
-                input.random_noise_max = 0.02
-                input.random_time_scaling = True
 
 
 class Article2D(Article1D):
@@ -116,3 +136,63 @@ class Article2D(Article1D):
             output.train_on_shots = False
         return model, acquire, inputs, outputs
 
+
+class Vrms(Vrms):
+    def __init__(self, model, acquire, bins):
+        super().__init__(model, acquire)
+        self.bins = bins
+
+    def plot(
+        self, data, weights=None, axs=None, cmap='inferno', vmin=None,
+        vmax=None, clip=1, ims=None, std_min=None, std_max=None,
+    ):
+        mean, std = data
+        weights = weights[..., 0]
+
+        ims = super().plot(mean, weights, axs, cmap, vmin, vmax, clip, ims)
+
+        if std.max()-std.min() > 0:
+            if std_min is None:
+                std_min = std.min()
+            if std_max is None:
+                std_max = std.max()
+            alpha = (std-std_min) / (std_max-std_min)
+            alpha = .8*(np.exp(-alpha**2)-np.exp(-1))/(1-np.exp(-1)) + .2
+            alpha = np.clip(alpha, 0, 1)
+            for im in ims:
+                im.set_alpha(alpha)
+        return ims
+
+    def preprocess(self, label, weight):
+        label, weight = super().preprocess(label, weight)
+        bins = np.linspace(0, 1, self.bins+1)
+        label = np.digitize(label, bins) - 1
+        one_hot = np.zeros([*label.shape, self.bins])
+        i, j = np.meshgrid(
+            *[np.arange(s) for s in label.shape], indexing='ij',
+        )
+        one_hot[i, j, label] = 1
+        weight = np.repeat(weight[..., None], self.bins, axis=-1)
+        return one_hot, weight
+
+    def postprocess(self, prob):
+        bins = np.linspace(0, 1, self.bins+1)
+        bins = np.mean([bins[:-1], bins[1:]], axis=0)
+        v = np.zeros_like(prob)
+        v[:] = bins[None, None]
+        mean = np.average(v, weights=prob, axis=-1)
+        var = np.average((v-mean[..., None])**2, weights=prob, axis=-1)
+        std = np.sqrt(var)
+
+        vmin, vmax = self.model.properties["vp"]
+        mean = mean*(vmax-vmin) + vmin
+        std = std * (vmax-vmin)
+        return mean, std
+
+
+class Vint(Vrms, Vint):
+    pass
+
+
+class Vdepth(Vrms, Vdepth):
+    pass
