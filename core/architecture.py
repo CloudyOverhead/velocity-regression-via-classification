@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-""""""
 
 from os import mkdir
 from os.path import join, abspath, isdir
@@ -16,15 +15,15 @@ from tensorflow.keras.losses import categorical_crossentropy
 from tensorflow.keras.backend import reshape
 from tensorflow.python.ops.math_ops import _bucketize as digitize
 from GeoFlow.DefinedNN.RCNN2D import RCNN2D, Hyperparameters, build_rcnn
-from GeoFlow.Losses import ref_loss, v_compound_loss
+from GeoFlow.Losses import ref_loss, make_loss_compatible
 from GeoFlow.SeismicUtilities import (
     build_vint_to_vrms_converter, build_time_to_depth_converter,
 )
 
 
 class RCNN2D(RCNN2D):
-    tooutputs = ["ref", "vrms", "vint", "vdepth"]
     toinputs = ["shotgather"]
+    tooutputs = ["ref", "vrms", "vint", "vdepth", "rec"]
 
     def build_network(self, inputs):
         params = self.params
@@ -39,17 +38,18 @@ class RCNN2D(RCNN2D):
             input_shape=inputs['shotgather'].shape,
             batch_size=batch_size,
         )
-        self.decoder['shotgather'] = build_encoder(
-            kernels=params.encoder_kernels[::-1],
-            dilation_rates=params.encoder_dilations[::-1],
-            qties_filters=params.encoder_filters[::-1],
+        if params.freeze_to in ['encoder', 'rcnn', 'rvcnn', 'rnn']:
+            self.encoder.trainable = False
+
+        self.decoder['rec'] = build_encoder(
+            kernels=params.decoder_kernels,
+            dilation_rates=params.decoder_dilations,
+            qties_filters=params.decoder_filters,
             input_shape=self.encoder.output_shape,
             batch_size=batch_size,
             transpose=True,
-            name="shotgather",
+            name="rec",
         )
-        if params.freeze_to in ['encoder', 'rcnn', 'rvcnn', 'rnn']:
-            self.encoder.trainable = False
 
         self.rcnn = build_rcnn(
             reps=7,
@@ -140,7 +140,7 @@ class RCNN2D(RCNN2D):
         outputs = {}
 
         data_stream = self.encoder(inputs['shotgather'])
-        outputs['shotgather'] = self.decoder['shotgather'](data_stream)
+        outputs['rec'] = self.decoder['rec'](data_stream)
         data_stream = self.rcnn(data_stream)
         data_stream = self.rvcnn(data_stream)
         data_stream = data_stream[:, :, 0]
@@ -148,7 +148,6 @@ class RCNN2D(RCNN2D):
         outputs['ref'] = self.decoder['ref'](data_stream)
 
         data_stream = self.rnn(data_stream)
-
         outputs['vint'] = self.decoder['vint'](data_stream)
         outputs['vrms'] = self.decoder['vrms'](outputs['vint'])
         outputs['vdepth'] = self.decoder['vdepth'](outputs['vint'])
@@ -160,6 +159,8 @@ class RCNN2D(RCNN2D):
         for lbl in self.tooutputs:
             if lbl == 'ref':
                 losses[lbl] = ref_loss()
+            elif lbl == 'rec':
+                losses[lbl] = normalized_rmse
             else:
                 losses[lbl] = stochastic_v_loss(self.params.decode_bins)
             losses_weights[lbl] = self.params.loss_scales[lbl]
@@ -167,22 +168,6 @@ class RCNN2D(RCNN2D):
         return losses, losses_weights
 
     def launch_testing(self, tfdataset: tf.data.Dataset, savedir: str = None):
-        """
-        Test the model on a dataset.
-
-        Predictions are saved to a subfolder that has the name of the network
-        within the subdataset's directory.
-
-        :param tfdataset: A TensorFlow `Dataset` object created from
-                          `GeoFlow.GeoDataset.tfdataset`. `tfdataset` must
-                          output pairs of data and labels, but labels are
-                          ignored at inference time.
-        :type tfdataset: tf.data.Dataset
-        :param savedir: The name of the subdirectory within the dataset test
-                        directory to save predictions in. Defaults to the name
-                        of the network class.
-        :type savedir: str
-        """
         if savedir is None:
             # Save the predictions to a subfolder that has the name of the
             # network.
@@ -218,20 +203,6 @@ def build_encoder(
     kernels, qties_filters, dilation_rates, input_shape, batch_size,
     input_dtype=tf.float32, transpose=False, name="encoder",
 ):
-    """Build the encoder head, a series of CNNs.
-
-    :param kernels: Kernel shapes of each convolution.
-    :param qties_filters: Quantity of filters of each CNN.
-    :param diltation_rates: Dilation rate in each dimension of each CNN.
-    :param input_shape: The shape of the expected input.
-    :param batch_size: Quantity of examples in a batch.
-    :param input_dtype: Data type of the input.
-    :param transpose: Whether to use deconvolutions or not instead of
-        convolutions.
-    :param name: Name of the produced Keras model.
-
-    :return: A Keras model.
-    """
     input_shape = input_shape[1:]
     Conv = Conv3D if not transpose else Conv3DTranspose
     input = Input(shape=input_shape, batch_size=batch_size, dtype=input_dtype)
@@ -253,16 +224,6 @@ def build_encoder(
 def build_rnn(
     units, input_shape, batch_size, input_dtype=tf.float32, name="rnn",
 ):
-    """Build a LSTM acting on dimension 1 (the time dimension).
-
-    :param units: Quantity of filters in the LSTM.
-    :param input_shape: The shape of the expected input.
-    :param batch_size: Quantity of examples in a batch.
-    :param input_dtype: Data type of the input.
-    :param name: Name of the produced Keras model.
-
-    :return: A Keras model.
-    """
     input_shape = input_shape[1:]
     input = Input(shape=input_shape, batch_size=batch_size, dtype=input_dtype)
     data_stream = Permute((2, 1, 3))(input)
@@ -285,21 +246,30 @@ class Hyperparameters1D(Hyperparameters):
     def __init__(self, is_training=True):
         super().__init__()
 
-        self.epochs = 20
         self.steps_per_epoch = 100
         self.batch_size = 24
 
         self.learning_rate = 8E-4
 
         self.decode_bins = 100
+        self.decode_tries = 20
+        self.decoder_kernels = [
+            [15, 1, 1],
+            [1, 9, 1],
+        ]
+        self.decoder_filters = [16, 1]
+        self.decoder_dilations = [[1, 1, 1]] * 2
 
         if is_training:
+            self.epochs = (20, 10, 20, 10)
             self.loss_scales = (
-                {'ref': .6, 'vrms': .3, 'vint': .1, 'vdepth': .0},
-                {'ref': .1, 'vrms': .7, 'vint': .2, 'vdepth': .0},
-                {'ref': .1, 'vrms': .3, 'vint': .5, 'vdepth': .1},
+                {'ref': .6, 'vrms': .3, 'vint': .1, 'vdepth': .0, 'rec': .0},
+                {'ref': .0, 'vrms': .0, 'vint': .0, 'vdepth': .0, 'rec': 1.},
+                {'ref': .1, 'vrms': .5, 'vint': .2, 'vdepth': .0, 'rec': .2},
+                {'ref': .1, 'vrms': .2, 'vint': .4, 'vdepth': .1, 'rec': .2},
             )
-            self.seed = (0, 1, 2)
+            self.seed = (0, 1, 2, 4)
+            self.freeze_to = (None, 'encoder', None, None)
 
 
 class Hyperparameters2D(Hyperparameters1D):
@@ -319,13 +289,20 @@ class Hyperparameters2D(Hyperparameters1D):
             [1, 1, 9],
         ]
         self.rcnn_kernel = [15, 3, 3]
+        self.decoder_kernels = [
+            [15, 1, 1],
+            [1, 9, 1],
+            [1, 1, 9],
+        ]
+        self.decoder_filters = [16, 16, 1]
+        self.decoder_dilations = [[1, 1, 1]] * 3
 
         if is_training:
             CHECKPOINT_1D = abspath(
                 join(".", "logs", "weights_1d", "0", "checkpoint_60")
             )
-            self.restore_from = (CHECKPOINT_1D, None, None)
-            self.seed = (3, 4, 5)
+            self.restore_from = (CHECKPOINT_1D, None, None, None)
+            self.seed = (5, 6, 7, 8)
 
 
 def stochastic_v_loss(decode_bins):
@@ -336,6 +313,11 @@ def stochastic_v_loss(decode_bins):
         loss = tf.reduce_mean(loss, axis=[1, 2])
         return loss
     return loss
+
+
+@make_loss_compatible
+def normalized_rmse(label, output):
+    return tf.reduce_mean((label-output)**2, axis=[1, 2, 3])
 
 
 def make_converter_stochastic(converter, batch_size, qty_bins, tries):

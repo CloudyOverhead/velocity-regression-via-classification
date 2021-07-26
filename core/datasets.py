@@ -1,48 +1,34 @@
 # -*- coding: utf-8 -*-
-"""Define parameters for different datasets."""
 
 from os.path import abspath
 
 import numpy as np
+import tensorflow as tf
 from GeoFlow.GeoDataset import GeoDataset
 from GeoFlow.DefinedDataset.Dataset2Dtest import Dataset2Dtest
 from GeoFlow.EarthModel import MarineModel
 from GeoFlow.SeismicGenerator import Acquisition
-from GeoFlow.GraphIO import Reftime, Vrms, Vint, Vdepth, ShotGather
+from GeoFlow.GraphIO import (
+    Reftime, Vrms, Vint, Vdepth, ShotGather, make_output_from_shotgather,
+)
 
 
 class Dataset(GeoDataset):
     basepath = abspath("datasets")
 
-
-class Test2D(Dataset2Dtest):
-    basepath = abspath("datasets")
-
-    def __init__(self, params, noise=False):
-        self.params = params
-        super().__init__()
-        self.trainsize = 5000
-        self.testsize = 50
-
-    def set_dataset(self):
-        model, acquire, inputs, outputs = super().set_dataset()
-        acquire.dg = 4
-        acquire.ds = 16
-
-        inputs = {ShotGather.name: ShotGather(model=model, acquire=acquire)}
-        bins = self.params.decode_bins
-        outputs = {
-            Reftime.name: Reftime(model=model, acquire=acquire),
-            Vrms.name: Vrms(model=model, acquire=acquire, bins=bins),
-            Vint.name: Vint(model=model, acquire=acquire, bins=bins),
-            Vdepth.name: Vdepth(model=model, acquire=acquire, bins=bins),
-        }
-        for name in inputs:
-            inputs[name].train_on_shots = True
-        for name in outputs:
-            outputs[name].train_on_shots = True
-            outputs[name].identify_direct = False
-        return model, acquire, inputs, outputs
+    def get_example(
+        self, filename=None, phase="train", shuffle=True, toinputs=None,
+        tooutputs=None,
+    ):
+        if tooutputs is None:
+            tooutputs = list(self.outputs.keys())
+        tooutputs = [out for out in tooutputs if out != 'rec']
+        inputs, labels, weights, filename = super().get_example(
+            filename, phase, shuffle, toinputs, tooutputs,
+        )
+        labels['rec'] = inputs['shotgather']
+        weights['rec'] = np.ones_like(labels['rec'])
+        return inputs, labels, weights, filename
 
 
 class Article1D(Dataset):
@@ -95,12 +81,15 @@ class Article1D(Dataset):
         acquire.configuration = 'inline'
 
         inputs = {ShotGather.name: ShotGather(model=model, acquire=acquire)}
+        rec = make_output_from_shotgather(inputs['shotgather'])
+        rec.name = "rec"
         bins = self.params.decode_bins
         outputs = {
             Reftime.name: Reftime(model=model, acquire=acquire),
             Vrms.name: Vrms(model=model, acquire=acquire, bins=bins),
             Vint.name: Vint(model=model, acquire=acquire, bins=bins),
             Vdepth.name: Vdepth(model=model, acquire=acquire, bins=bins),
+            rec.name: rec,
         }
 
         for input in inputs.values():
