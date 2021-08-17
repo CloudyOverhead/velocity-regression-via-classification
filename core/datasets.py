@@ -1,19 +1,21 @@
 # -*- coding: utf-8 -*-
 
-from os.path import abspath
+from os.path import abspath, join
+from glob import glob
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras.utils import Sequence
+from tensorflow.python.keras.utils.data_utils import Sequence
 from GeoFlow.GeoDataset import GeoDataset
-from GeoFlow.DefinedDataset.Dataset2Dtest import Dataset2Dtest
 from GeoFlow.EarthModel import MarineModel
 from GeoFlow.SeismicGenerator import Acquisition
 from GeoFlow.GraphIO import (
-    Reftime, Vrms, Vint, Vdepth, ShotGather, make_output_from_shotgather,
+    Reftime, Vrms, Vint, Vdepth, ShotGather, GraphOutput,
 )
 
 
-class Dataset(GeoDataset):
+class Dataset(GeoDataset, Sequence):
     basepath = abspath("datasets")
 
     def get_example(
@@ -22,13 +24,74 @@ class Dataset(GeoDataset):
     ):
         if tooutputs is None:
             tooutputs = list(self.outputs.keys())
-        tooutputs = [out for out in tooutputs if out != 'rec']
+        tooutputs = [out for out in tooutputs if out != 'is_real']
         inputs, labels, weights, filename = super().get_example(
             filename, phase, shuffle, toinputs, tooutputs,
         )
-        labels['rec'] = inputs['shotgather']
-        weights['rec'] = np.ones_like(labels['rec'])
+        labels['is_real'] = self.outputs['is_real'].is_real
+        weights['is_real'] = np.ones_like(labels['is_real'])
         return inputs, labels, weights, filename
+
+    def tfdataset(
+        self, phase="train", shuffle=True, tooutputs=None, toinputs=None,
+        batch_size=1,
+    ):
+        if phase == "validate" and self.validatesize == 0:
+            return
+
+        self.shuffle = shuffle
+        self.tooutputs = tooutputs
+        self.toinputs = toinputs
+        self.batch_size = batch_size
+
+        phases = {
+            "train": self.datatrain,
+            "validate": self.datavalidate,
+            "test": self.datatest,
+        }
+        pathstr = join(phases[phase], 'example_*')
+        self.files = glob(pathstr)
+
+        self.on_batch_end()
+
+        return self
+
+    def __getitem__(self, idx):
+        batch = self.batches_idx[idx]
+        data = {in_: [] for in_ in self.toinputs}
+        data['filename'] = []
+        labels = {out: [] for out in self.tooutputs}
+        for i in batch:
+            filename = self.files[i]
+            data_i, labels_i, weights_i, _ = self.get_example(
+                filename=filename,
+                toinputs=self.toinputs,
+                tooutputs=self.tooutputs,
+            )
+            for in_ in self.toinputs:
+                data[in_].append(data_i[in_])
+            data["filename"].append([filename])
+            for out in self.tooutputs:
+                labels[out].append([labels_i[out], weights_i[out]])
+        for key, value in data.items():
+            data[key] = np.array(value)
+        for key, value in labels.items():
+            labels[key] = np.array(value)
+        return data, labels
+
+    def __len__(self):
+        return int(len(self.files) / self.batch_size)
+
+    def on_batch_end(self):
+        self.batches_idx = np.arange(len(self) * self.batch_size)
+        if self.shuffle:
+            self.batches_idx = np.random.choice(
+                self.batches_idx,
+                [len(self), self.batch_size],
+                replace=False,
+            )
+        else:
+            self.batches_idx.reshape([len(self), self.batch_size])
 
 
 class Article1D(Dataset):
@@ -81,15 +144,13 @@ class Article1D(Dataset):
         acquire.configuration = 'inline'
 
         inputs = {ShotGather.name: ShotGather(model=model, acquire=acquire)}
-        rec = make_output_from_shotgather(inputs['shotgather'])
-        rec.name = "rec"
         bins = self.params.decode_bins
         outputs = {
             Reftime.name: Reftime(model=model, acquire=acquire),
             Vrms.name: Vrms(model=model, acquire=acquire, bins=bins),
             Vint.name: Vint(model=model, acquire=acquire, bins=bins),
             Vdepth.name: Vdepth(model=model, acquire=acquire, bins=bins),
-            rec.name: rec,
+            IsReal.name: IsReal(False),
         }
 
         for input in inputs.values():
@@ -162,6 +223,7 @@ class Vrms(Vrms):
         )
         one_hot[i, j, label] = 1
         weight = np.repeat(weight[..., None], self.bins, axis=-1)
+        one_hot, weight = one_hot[..., None], weight[..., None]
         return one_hot, weight
 
     def postprocess(self, prob):
@@ -185,3 +247,15 @@ class Vint(Vrms, Vint):
 
 class Vdepth(Vrms, Vdepth):
     pass
+
+
+class IsReal(GraphOutput):
+    name = 'is_real'
+
+    def __init__(self, is_real):
+        self.is_real = np.array([is_real], dtype=float)
+        self.is_real = self.is_real.reshape([1, 1, 1])
+        super().__init__(None, None)
+
+    def generate(self, data, props):
+        return self.is_real

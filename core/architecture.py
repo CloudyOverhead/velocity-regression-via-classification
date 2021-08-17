@@ -9,9 +9,11 @@ import tensorflow as tf
 from tensorflow.keras import Model, Sequential
 from tensorflow.keras.layers import (
     Conv3D, Conv3DTranspose, Conv2D, Bidirectional, LSTM, Permute, Input, ReLU,
-    Dropout,
+    Dropout, Dense,
 )
-from tensorflow.keras.losses import categorical_crossentropy
+from tensorflow.keras.losses import (
+    categorical_crossentropy, binary_crossentropy,
+)
 from tensorflow.keras.backend import reshape
 from tensorflow.python.ops.math_ops import _bucketize as digitize
 from GeoFlow.DefinedNN.RCNN2D import RCNN2D, Hyperparameters, build_rcnn
@@ -23,7 +25,7 @@ from GeoFlow.SeismicUtilities import (
 
 class RCNN2D(RCNN2D):
     toinputs = ["shotgather"]
-    tooutputs = ["ref", "vrms", "vint", "vdepth", "rec"]
+    tooutputs = ["ref", "vrms", "vint", "vdepth", "is_real"]
 
     def build_network(self, inputs):
         params = self.params
@@ -40,16 +42,6 @@ class RCNN2D(RCNN2D):
         )
         if params.freeze_to in ['encoder', 'rcnn', 'rvcnn', 'rnn']:
             self.encoder.trainable = False
-
-        self.decoder['rec'] = build_encoder(
-            kernels=params.decoder_kernels,
-            dilation_rates=params.decoder_dilations,
-            qties_filters=params.decoder_filters,
-            input_shape=self.encoder.output_shape,
-            batch_size=batch_size,
-            transpose=True,
-            name="rec",
-        )
 
         self.rcnn = build_rcnn(
             reps=7,
@@ -76,6 +68,15 @@ class RCNN2D(RCNN2D):
         )
         if params.freeze_to in ['rvcnn', 'rnn']:
             self.rvcnn.trainable = False
+
+        self.discriminator = build_discriminator(
+            units=params.discriminator_units,
+            input_shape=self.encoder.output_shape,
+            batch_size=batch_size,
+            name="discriminator",
+        )
+        if params.freeze_discriminator:
+            self.discriminator.trainable = False
 
         self.decoder['ref'] = Conv2D(
             1,
@@ -140,9 +141,14 @@ class RCNN2D(RCNN2D):
         outputs = {}
 
         data_stream = self.encoder(inputs['shotgather'])
-        outputs['rec'] = self.decoder['rec'](data_stream)
         data_stream = self.rcnn(data_stream)
         data_stream = self.rvcnn(data_stream)
+        outputs['is_real'] = self.discriminator(
+            reshape(data_stream, [self.params.batch_size, -1])
+        )
+        outputs['is_real'] = reshape(
+            outputs['is_real'], [self.params.batch_size, 1, 1, 1],
+        )
         data_stream = data_stream[:, :, 0]
 
         outputs['ref'] = self.decoder['ref'](data_stream)
@@ -151,16 +157,19 @@ class RCNN2D(RCNN2D):
         outputs['vint'] = self.decoder['vint'](data_stream)
         outputs['vrms'] = self.decoder['vrms'](outputs['vint'])
         outputs['vdepth'] = self.decoder['vdepth'](outputs['vint'])
+        outputs = {
+            key: tf.expand_dims(output, -1) for key, output in outputs.items()
+        }
 
-        return {out: outputs[out] for out in self.tooutputs}
+        return outputs
 
     def build_losses(self):
         losses, losses_weights = {}, {}
         for lbl in self.tooutputs:
             if lbl == 'ref':
                 losses[lbl] = ref_loss()
-            elif lbl == 'rec':
-                losses[lbl] = normalized_rmse
+            elif lbl == 'is_real':
+                losses[lbl] = make_loss_compatible(binary_crossentropy)
             else:
                 losses[lbl] = stochastic_v_loss(self.params.decode_bins)
             losses_weights[lbl] = self.params.loss_scales[lbl]
@@ -221,6 +230,16 @@ def build_encoder(
     return encoder
 
 
+def build_discriminator(
+    units, input_shape, batch_size, input_dtype=tf.float32, name="encoder",
+):
+    discriminator = Sequential()
+    for current_units in units:
+        discriminator.add(Dense(current_units, activation='relu'))
+    discriminator.add(Dense(1, activation='sigmoid'))
+    return discriminator
+
+
 def build_rnn(
     units, input_shape, batch_size, input_dtype=tf.float32, name="rnn",
 ):
@@ -253,12 +272,8 @@ class Hyperparameters1D(Hyperparameters):
 
         self.decode_bins = 100
         self.decode_tries = 20
-        self.decoder_kernels = [
-            [15, 1, 1],
-            [1, 9, 1],
-        ]
-        self.decoder_filters = [16, 1]
-        self.decoder_dilations = [[1, 1, 1]] * 2
+        self.discriminator_units = [512, 512, 512]
+        self.freeze_discriminator = False
 
         if is_training:
             self.epochs = (20, 10, 20, 10)
@@ -289,13 +304,6 @@ class Hyperparameters2D(Hyperparameters1D):
             [1, 1, 9],
         ]
         self.rcnn_kernel = [15, 3, 3]
-        self.decoder_kernels = [
-            [15, 1, 1],
-            [1, 9, 1],
-            [1, 1, 9],
-        ]
-        self.decoder_filters = [16, 16, 1]
-        self.decoder_dilations = [[1, 1, 1]] * 3
 
         if is_training:
             CHECKPOINT_1D = abspath(
@@ -308,16 +316,12 @@ class Hyperparameters2D(Hyperparameters1D):
 def stochastic_v_loss(decode_bins):
     def loss(label, output):
         label, weight = label[:, 0], label[:, 1, ..., 0]
+        output = output[..., 0]
         loss = categorical_crossentropy(label, output)
         loss *= weight
         loss = tf.reduce_mean(loss, axis=[1, 2])
         return loss
     return loss
-
-
-@make_loss_compatible
-def normalized_rmse(label, output):
-    return tf.reduce_mean((label-output)**2, axis=[1, 2, 3])
 
 
 def make_converter_stochastic(converter, batch_size, qty_bins, tries):
