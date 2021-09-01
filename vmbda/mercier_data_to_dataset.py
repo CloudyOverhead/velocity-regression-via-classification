@@ -10,8 +10,8 @@ from segyio import open as open_segy
 from segyio import TraceField
 from h5py import File
 
-from core.discard_shots import DISCARD_IDS
-from core.mercier_geometry import IGNORE_LINES
+from vmbda.discard_shots import DISCARD_IDS
+from vmbda.mercier_geometry import IGNORE_LINES
 
 
 DATASET_DIR = join("datasets", "Mercier")
