@@ -10,8 +10,8 @@ from segyio import open as open_segy
 from segyio import TraceField
 from h5py import File
 
-from core.datasets import Mercier, ShotGather
 from core.discard_shots import DISCARD_IDS
+from core.mercier_geometry import IGNORE_LINES
 
 
 DATASET_DIR = join("datasets", "Mercier")
@@ -35,9 +35,10 @@ X_RCV = np.arange((NG-1)*DG, -1, -DG)
 # X_RCV = X_RCV + X_SRC - XSHOTS0
 
 INVERTED_GEOPHONES = [8, 45]
+VSMAX = 1000
 
 
-def load_line(number):
+def load_data(number):
     segy_path = f"{number}.sgy"
     segy_path = join(DATASET_DIR, "prestacked", segy_path)
     with open_segy(segy_path, 'rb', ignore_geometry=True) as f:
@@ -57,24 +58,35 @@ def load_line(number):
     return data
 
 
-def plot(data, clip=1E-1):
-    fig, ax = plt.subplots(figsize=(10, 10))
+def plot(data, clip=1E-1, fill_between=False):
+    plt.figure(figsize=(10, 10))
 
-    for o, t in zip(OFFSETS, data.T):
-        if not np.count_nonzero(t):
-            continue
-        t /= np.amax(t)
-        t[t > clip] = clip
-        t[t < -clip] = -clip
-        t /= clip
-        t *= .9 * DG
-        x = o + t
-        ax.plot(x, TIME, color='k', lw=1)
-        ax.fill_betweenx(TIME, o, x, where=(x > o), color='k', alpha=.2)
+    data /= np.amax(data, axis=0)
+    if fill_between:
+        for o, t in zip(OFFSETS, data.T):
+            if not np.count_nonzero(t):
+                continue
+            t[t > clip] = clip
+            t[t < -clip] = -clip
+            t /= clip
+            t *= .9 * DG
+            x = o + t
+            plt.plot(x, TIME, color='k', lw=1)
+            plt.fill_betweenx(TIME, o, x, where=(x > o), color='k', alpha=.2)
+        plt.gca().invert_yaxis()
+        plt.xlabel("Relative recorder position (m)")
+    else:
+        extent = [OFFSETS.min(), OFFSETS.max(), TIME.min(), TIME.max()]
+        plt.imshow(
+            data,
+            extent=extent,
+            aspect='auto',
+            vmin=-clip,
+            vmax=clip,
+            cmap='Greys',
+        )
 
-    ax.invert_yaxis()
-    ax.set_xlabel("Relative recorder position (m)")
-    ax.set_ylabel("Time (s)")
+    plt.ylabel("Time (s)")
     plt.show()
 
 
@@ -85,6 +97,12 @@ def preprocess(data):
     panel_max = np.amax(data, axis=(0, 1), keepdims=True)
     data /= panel_max + eps
     data *= 1000
+
+    noisy_geophones = find_noisy_geophones(data[..., 0], .15, 500)
+    print(f"Discarding geophones {list(noisy_geophones)}.")
+    data[:, noisy_geophones] = 0
+
+    data = filter_v(data, 0, VSMAX)
     return data
 
 
@@ -116,9 +134,25 @@ def find_noisy_geophones(data, drop_factor, cutoff):
     return np.nonzero(var > max_hf)[0]
 
 
+def filter_v(data, vmin, vmax):
+    data = data[::-1]
+    fdata = np.fft.rfft2(data, axes=(0, 1))
+    f = np.fft.fftfreq(fdata.shape[0], NT*DT)
+    k = np.fft.fftfreq(fdata.shape[1], NG*DG)
+    f, k = np.meshgrid(f, k, indexing='ij')
+    mask = (f != 0) & (k != 0)
+    v = 2 * np.divide(f, k, out=np.zeros_like(f), where=mask)
+    fdata[(vmin < v) & (v < vmax)] = 0
+    data = np.fft.irfft2(fdata, axes=(0, 1))
+    data = data[::-1]
+    return data
+
+
 def save(data, save_dir, example_id):
     ns = data.shape[-1]
     dummy_label = np.zeros([NT, ns])
+    data = data.swapaxes(1, 2)
+    data = data.reshape([NT, -1])
     try:
         makedirs(save_dir)
     except FileExistsError:
@@ -135,17 +169,19 @@ if __name__ == '__main__':
     files = listdir(join(DATASET_DIR, "prestacked"))
     files.remove("binary")
     files.remove("header")
-    numbers = [int(file[:-4]) for file in files]
-    data = load_line(numbers[0])
-    data = preprocess(data)
-    # plot(data[..., 0])
+    numbers = [int(file[:-4]) // 1000 for file in files]
+    numbers = [n for n in numbers if n not in IGNORE_LINES]
+    numbers = set(numbers)
 
     save_dir = join(DATASET_DIR, "test")
-    noisy_geophones = find_noisy_geophones(data[..., 0], .15, 500)
-    print(f"Discarding geophones {list(noisy_geophones)}.")
-    for line_no in numbers:
-        data = load_line(line_no)
-        data[:, noisy_geophones] = 0
+    for i, n in enumerate(numbers):
+        print(f"Processing line {i+1} of {len(numbers)}.")
+        data = np.empty([NT, NG, 0])
+        for file in files:
+            file_n = int(file[:-4])
+            if file_n // 1000 == n:
+                data = np.append(data, load_data(file_n), axis=2)
         data = preprocess(data)
-        plot(data[..., 0])
-        save(data, save_dir, line_no)
+        for save_dir, i0 in zip(['train', 'test'], [0, len(numbers)]):
+            save_dir = join(DATASET_DIR, save_dir)
+            save(data, save_dir, i+i0)

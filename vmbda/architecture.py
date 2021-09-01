@@ -3,6 +3,7 @@
 from os import mkdir
 from os.path import join, abspath, isdir
 from functools import partial
+from copy import deepcopy
 
 import numpy as np
 import tensorflow as tf
@@ -55,10 +56,9 @@ class RCNN2D(RCNN2D):
         if params.freeze_to in ['rcnn', 'rvcnn', 'rnn']:
             self.rcnn.trainable = False
 
-        self.rvcnn = build_rcnn(
-            reps=6,
-            kernel=(1, 2, 1),
-            qty_filters=params.rcnn_filters,
+        self.rvcnn = Conv3D(
+            params.rcnn_filters,
+            (1, 2, 1),
             dilation_rate=(1, 1, 1),
             strides=(1, 2, 1),
             padding='valid',
@@ -69,11 +69,13 @@ class RCNN2D(RCNN2D):
         if params.freeze_to in ['rvcnn', 'rnn']:
             self.rvcnn.trainable = False
 
+        shape_before_pooling = np.array(self.rcnn.output_shape)
+        shape_after_pooling = tuple(shape_before_pooling[[0, 1, 3, 4]])
+
         self.discriminator = build_discriminator(
             units=params.discriminator_units,
-            input_shape=self.encoder.output_shape,
+            input_shape=shape_after_pooling,
             batch_size=batch_size,
-            name="discriminator",
         )
         if params.freeze_discriminator:
             self.discriminator.trainable = False
@@ -83,13 +85,11 @@ class RCNN2D(RCNN2D):
             params.decode_ref_kernel,
             padding='same',
             activation='sigmoid',
-            input_shape=self.rvcnn.output_shape,
+            input_shape=shape_after_pooling,
             batch_size=batch_size,
             name="ref",
         )
 
-        shape_before_pooling = np.array(self.rvcnn.output_shape)
-        shape_after_pooling = tuple(shape_before_pooling[[0, 1, 3, 4]])
         self.rnn = build_rnn(
             units=200,
             input_shape=shape_after_pooling,
@@ -142,14 +142,11 @@ class RCNN2D(RCNN2D):
 
         data_stream = self.encoder(inputs['shotgather'])
         data_stream = self.rcnn(data_stream)
-        data_stream = self.rvcnn(data_stream)
-        outputs['is_real'] = self.discriminator(
-            reshape(data_stream, [self.params.batch_size, -1])
-        )
-        outputs['is_real'] = reshape(
-            outputs['is_real'], [self.params.batch_size, 1, 1, 1],
-        )
+        while data_stream.shape[2] != 1:
+            data_stream = self.rvcnn(data_stream)
         data_stream = data_stream[:, :, 0]
+
+        outputs['is_real'] = self.discriminator(data_stream)
 
         outputs['ref'] = self.decoder['ref'](data_stream)
 
@@ -198,7 +195,7 @@ class RCNN2D(RCNN2D):
             )
 
             for i, example in enumerate(data["filename"]):
-                example = example.numpy().decode("utf-8")
+                example = example[0]
                 exampleid = int(example.split("_")[-1])
                 example_evaluated = {
                     lbl: out[i] for lbl, out in evaluated.items()
@@ -231,12 +228,24 @@ def build_encoder(
 
 
 def build_discriminator(
-    units, input_shape, batch_size, input_dtype=tf.float32, name="encoder",
+    units, input_shape, batch_size, input_dtype=tf.float32,
+    name="discriminator",
 ):
-    discriminator = Sequential()
+    input_shape = input_shape[1:]
+    input = Input(shape=input_shape, batch_size=batch_size, dtype=input_dtype)
+
+    data_stream = input[:, :2000]
+    data_stream = reverse_gradient(data_stream)
+    batches = data_stream.get_shape()[0]
+    data_stream = reshape(data_stream, [batches, -1])
     for current_units in units:
-        discriminator.add(Dense(current_units, activation='relu'))
-    discriminator.add(Dense(1, activation='sigmoid'))
+        dense = Dense(current_units, activation='relu')
+        data_stream = dense(data_stream)
+    dense = Dense(1, activation='sigmoid')
+    data_stream = dense(data_stream)
+    data_stream = reshape(data_stream, [batches, 1, 1, 1])
+
+    discriminator = Model(inputs=input, outputs=data_stream, name=name)
     return discriminator
 
 
@@ -261,6 +270,134 @@ def build_rnn(
     return rnn
 
 
+class RCNN2DUnpackReal(RCNN2D):
+    def __init__(
+        self, input_shapes, params, dataset, checkpoint_dir, devices,
+        run_eagerly,
+    ):
+        ng = (dataset.acquire.gmax-dataset.acquire.gmin) // dataset.acquire.dg
+        ng = int(ng)
+        nt = dataset.acquire.NT // dataset.acquire.resampling
+        nt = int(nt)
+
+        is_1d = "1D" in type(params).__name__
+        if is_1d:
+            self.receptive_field = 1
+            self.cmps_per_iter = 61
+        else:
+            self.receptive_field = 31
+            self.cmps_per_iter = 2*self.receptive_field - 1
+
+        input_shapes = {'shotgather': (nt, ng, self.cmps_per_iter, 1)}
+        params.batch_size = 1
+        params = deepcopy(params)
+        if devices is not None:
+            params.batch_size = len(devices)
+        else:
+            params.batch_size = len(tf.config.list_physical_devices('GPU'))
+        super().__init__(
+            input_shapes, params, dataset, checkpoint_dir, devices,
+            run_eagerly,
+        )
+
+    @property
+    def dbatch(self):
+        return self.cmps_per_iter - 2*(self.receptive_field//2)
+
+    def launch_testing(self, tfdataset, savedir):
+        if savedir is None:
+            savedir = type(self).__name__
+        savedir = join(self.dataset.datatest, savedir)
+        if not isdir(savedir):
+            mkdir(savedir)
+
+        batch_size = self.params.batch_size
+        for data, _ in tfdataset:
+            evaluated = {key: [] for key in self.tooutputs}
+            shotgather = data['shotgather'][0]
+            filename = data['filename'][0]
+            qty_cmps = shotgather.shape[2]
+            shotgather = self.split_data(shotgather)
+            excess = int((shotgather.shape[0]-1) % batch_size) - 1
+            batch_pad = batch_size - excess
+            pads = [[0, batch_pad], *[[0, 0]]*(shotgather.ndim-1)]
+            shotgather = np.pad(shotgather, pads)
+            shotgather = shotgather.reshape(
+                [-1, batch_size, *shotgather.shape[1:]]
+            )
+            for i, batch in enumerate(shotgather):
+                print(f"Processing batch {i+1} out of {len(shotgather)}.")
+                filename_input = tf.expand_dims(filename, axis=0)
+                filename_input = tf.repeat(filename_input, batch_size, axis=0)
+                evaluated_batch = self.predict(
+                    {
+                        'filename': filename_input,
+                        'shotgather': batch,
+                    },
+                    batch_size=batch_size,
+                    max_queue_size=10,
+                    use_multiprocessing=False,
+                )
+                for key, pred in evaluated_batch.items():
+                    for slice in pred:
+                        evaluated[key].append(slice)
+            if batch_pad:
+                for key, pred in evaluated.items():
+                    del evaluated[key][-batch_pad:]
+            print("Joining slices.")
+            evaluated = self.unsplit_predictions(evaluated, qty_cmps)
+            for lbl, out in evaluated.items():
+                evaluated[lbl] = out[..., 0]
+
+            example = filename.numpy().decode("utf-8")
+            exampleid = int(example.split("_")[-1])
+            example_evaluated = {
+                lbl: out for lbl, out in evaluated.items()
+            }
+            self.dataset.generator.write_predictions(
+                exampleid, savedir, example_evaluated,
+            )
+
+    def split_data(self, data):
+        rf = self.receptive_field
+        cmps_per_iter = self.cmps_per_iter
+        dbatch = self.dbatch
+
+        qty_cmps = data.shape[2]
+        start_idx = np.arange(0, qty_cmps-rf//2, dbatch)
+        batch_idx = np.arange(cmps_per_iter)
+        select_idx = (
+            np.expand_dims(start_idx, 0) + np.expand_dims(batch_idx, 1)
+        )
+        qty_batches = len(start_idx)
+        end_pad = dbatch*qty_batches + 2*(rf//2) - qty_cmps
+        data = np.pad(data, [[0, 0], [0, 0], [0, end_pad], [0, 0]])
+        data = np.take(data, select_idx, axis=2)
+        data = np.transpose(data, [3, 0, 1, 2, 4])
+        return data
+
+    def unsplit_predictions(self, predictions, qty_cmps):
+        rf = self.receptive_field
+        dbatch = self.dbatch
+
+        is_1d = "1D" in type(self.params).__name__
+        for key, pred in predictions.items():
+            if not is_1d:
+                for i, slice in enumerate(pred):
+                    if i == 0:
+                        pred[i] = slice[:, :-(rf//2)]
+                    elif i != len(pred) - 1:
+                        pred[i] = slice[:, rf//2:-(rf//2)]
+            unpad_end = dbatch*len(pred) + 2*(rf//2) - qty_cmps
+            if unpad_end:
+                pred[-1] = pred[-1][:, rf//2:-unpad_end]
+            else:
+                pred[-1] = pred[-1][:, rf//2:]
+        for key, pred in predictions.items():
+            predictions[key] = np.concatenate(pred, axis=1)
+        return predictions
+
+
 class Hyperparameters1D(Hyperparameters):
     def __init__(self, is_training=True):
         super().__init__()
@@ -278,10 +415,10 @@ class Hyperparameters1D(Hyperparameters):
         if is_training:
             self.epochs = (20, 10, 20, 10)
             self.loss_scales = (
-                {'ref': .6, 'vrms': .3, 'vint': .1, 'vdepth': .0, 'rec': .0},
-                {'ref': .0, 'vrms': .0, 'vint': .0, 'vdepth': .0, 'rec': 1.},
-                {'ref': .1, 'vrms': .5, 'vint': .2, 'vdepth': .0, 'rec': .2},
-                {'ref': .1, 'vrms': .2, 'vint': .4, 'vdepth': .1, 'rec': .2},
+                {'ref': .6, 'vrms': .3, 'vint': .1, 'vdepth': .0, 'is_real': .0},
+                {'ref': .0, 'vrms': .0, 'vint': .0, 'vdepth': .0, 'is_real': 1.},
+                {'ref': .1, 'vrms': .5, 'vint': .2, 'vdepth': .0, 'is_real': .2},
+                {'ref': .1, 'vrms': .2, 'vint': .4, 'vdepth': .1, 'is_real': .2},
             )
             self.seed = (0, 1, 2, 4)
             self.freeze_to = (None, 'encoder', None, None)
@@ -350,3 +487,15 @@ def make_converter_stochastic(converter, batch_size, qty_bins, tries):
     matches = tf.cast(v == bins, dtype=tf.float32)
     p = tf.reduce_sum(matches, axis=0, keepdims=False) / tries
     return Model(inputs=input, outputs=p, name=f"stochastic_{converter.name}")
+
+
+@tf.custom_gradient
+def reverse_gradient(x):
+    """Reverse the gradient, as performed in Gradient Reversal Layers (GRL).
+
+    Provided by FalconUA (https://stackoverflow.com/a/56852417).
+    """
+    y = tf.identity(x)
+    def custom_grad(dy):
+        return -dy
+    return y, custom_grad
