@@ -50,7 +50,7 @@ class Dataset(GeoDataset, Sequence):
                 or not self.files[self.phase]
             )
             if do_reset_iterator:
-                self.tfdataset(phase, shuffle, toinputs, tooutputs)
+                self.tfdataset(phase, shuffle, tooutputs, toinputs)
             filename = next(self.iter_examples)
 
         inputs, labels, weights, filename = super().get_example(
@@ -441,11 +441,13 @@ class Hybrid(Dataset):
         self, filename=None, phase="train", shuffle=True, toinputs=None,
         tooutputs=None,
     ):
-        if filename is not None:
-            if not hasattr(self, "iter_examples"):
-                if shuffle:
-                    np.random.shuffle(self.files[self.phase])
-                self.iter_examples = iter(self.files[self.phase])
+        if filename is None:
+            do_reset_iterator = (
+                not hasattr(self, "iter_examples")
+                or not self.files[self.phase]
+            )
+            if do_reset_iterator:
+                self.tfdataset(phase, shuffle, tooutputs, toinputs)
             filename = next(self.iter_examples)
         dataset_name = split(split(split(filename)[0])[0])[-1]
         dataset_names = [d.name for d in self.datasets]
