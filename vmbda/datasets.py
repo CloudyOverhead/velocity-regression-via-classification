@@ -2,7 +2,7 @@
 
 from os.path import abspath, join, split
 from glob import glob
-from itertools import chain
+from itertools import chain, cycle
 from copy import copy
 
 import numpy as np
@@ -43,6 +43,16 @@ class Dataset(GeoDataset, Sequence):
         if tooutputs is None:
             tooutputs = list(self.outputs.keys())
         tooutputs = [out for out in tooutputs if out != 'is_real']
+
+        if filename is None:
+            do_reset_iterator = (
+                not hasattr(self, "iter_examples")
+                or isinstance(self.files, dict)
+            )
+            if do_reset_iterator:
+                self.tfdataset(phase, shuffle, toinputs, tooutputs)
+            filename = next(self.iter_examples)
+
         inputs, labels, weights, filename = super().get_example(
             filename, phase, shuffle, toinputs, tooutputs,
         )
@@ -69,6 +79,10 @@ class Dataset(GeoDataset, Sequence):
         }
         pathstr = join(phases[phase], 'example_*')
         self.files = glob(pathstr)
+
+        if shuffle:
+            np.random.shuffle(self.files)
+        self.iter_examples = cycle(self.files)
 
         self.on_batch_end()
 
@@ -427,12 +441,15 @@ class Hybrid(Dataset):
         tooutputs=None,
     ):
         if filename is not None:
-            dataset_name = split(split(split(filename)[0])[0])[-1]
-            dataset_names = [d.name for d in self.datasets]
-            select_dataset = dataset_names.index(dataset_name)
-            dataset = self.datasets[select_dataset]
-        else:
-            dataset = self.datasets[0]
+            if not hasattr(self, "iter_examples"):
+                if shuffle:
+                    np.random.shuffle(self.files)
+                self.iter_examples = iter(self.files)
+            filename = next(self.iter_examples)
+        dataset_name = split(split(split(filename)[0])[0])[-1]
+        dataset_names = [d.name for d in self.datasets]
+        select_dataset = dataset_names.index(dataset_name)
+        dataset = self.datasets[select_dataset]
         return dataset.get_example(
             filename, phase, shuffle, toinputs, tooutputs,
         )
@@ -526,7 +543,7 @@ class Vrms(Vrms):
         vmax=None, clip=1, ims=None, std_min=None, std_max=None,
     ):
         mean, std = data
-        weights = weights[..., 0]
+        weights = weights[..., 0, 0]
 
         ims = super().plot(mean, weights, axs, cmap, vmin, vmax, clip, ims)
 
@@ -556,6 +573,7 @@ class Vrms(Vrms):
         return one_hot, weight
 
     def postprocess(self, prob):
+        prob = prob[..., 0]
         bins = np.linspace(0, 1, self.bins+1)
         bins = np.mean([bins[:-1], bins[1:]], axis=0)
         v = np.zeros_like(prob)
@@ -585,6 +603,15 @@ class IsReal(GraphOutput):
         self.is_real = np.array([is_real], dtype=float)
         self.is_real = self.is_real.reshape([1, 1, 1])
         super().__init__(None, None)
+
+    def plot(
+        self, data, weights=None, axs=None, cmap='inferno', vmin=0, vmax=1,
+        clip=1, ims=None,
+    ):
+        weights = weights[..., 0]
+        return super().plot(
+            data, weights, axs, cmap, vmin, vmax, clip, ims,
+        )
 
     def generate(self, data, props):
         return self.is_real
