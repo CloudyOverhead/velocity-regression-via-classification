@@ -47,7 +47,7 @@ class Dataset(GeoDataset, Sequence):
         if filename is None:
             do_reset_iterator = (
                 not hasattr(self, "iter_examples")
-                or isinstance(self.files, dict)
+                or not self.files[self.phase]
             )
             if do_reset_iterator:
                 self.tfdataset(phase, shuffle, toinputs, tooutputs)
@@ -66,6 +66,7 @@ class Dataset(GeoDataset, Sequence):
     ):
         if phase == "validate" and self.validatesize == 0:
             return
+        self.phase = phase
 
         self.shuffle = shuffle
         self.tooutputs = tooutputs
@@ -78,15 +79,15 @@ class Dataset(GeoDataset, Sequence):
             "test": self.datatest,
         }
         pathstr = join(phases[phase], 'example_*')
-        self.files = glob(pathstr)
+        self.files[self.phase] = glob(pathstr)
 
         if shuffle:
-            np.random.shuffle(self.files)
-        self.iter_examples = cycle(self.files)
+            np.random.shuffle(self.files[self.phase])
+        self.iter_examples = cycle(self.files[self.phase])
 
         self.on_batch_end()
 
-        return self
+        return copy(self)
 
     def __getitem__(self, idx):
         batch = self.batches_idx[idx]
@@ -94,7 +95,7 @@ class Dataset(GeoDataset, Sequence):
         data['filename'] = []
         labels = {out: [] for out in self.tooutputs}
         for i in batch:
-            filename = self.files[i]
+            filename = self.files[self.phase][i]
             data_i, labels_i, weights_i, _ = self.get_example(
                 filename=filename,
                 toinputs=self.toinputs,
@@ -112,7 +113,7 @@ class Dataset(GeoDataset, Sequence):
         return data, labels
 
     def __len__(self):
-        return int(len(self.files) / self.batch_size)
+        return int(len(self.files[self.phase]) / self.batch_size)
 
     def on_batch_end(self):
         self.batches_idx = np.arange(len(self) * self.batch_size)
@@ -302,13 +303,13 @@ class Mercier(Article2D):
         super().tfdataset(phase, shuffle, tooutputs, toinputs, batch_size)
         if not hasattr(self, 'preloaded'):
             self.preloaded = {}
-            for file in self.files:
+            for file in self.files[self.phase]:
                 self.preloaded[file] = super().get_example(
                     file, phase, shuffle, toinputs, tooutputs,
                 )
 
-            files = self.files
-            self.files = []
+            files = self.files[self.phase]
+            self.files[self.phase] = []
             for file in files:
                 inputs, _, _, _ = self.preloaded[file]
                 shotgather = inputs['shotgather']
@@ -316,7 +317,7 @@ class Mercier(Article2D):
                 for slice_start in range(0, slice_max+1):
                     slice_end = slice_start + EXPECTED_WIDTH
                     filename = file + f'[{slice_start}:{slice_end}]'
-                    self.files.append(filename)
+                    self.files[self.phase].append(filename)
         self.on_batch_end()
         return self
 
@@ -443,8 +444,8 @@ class Hybrid(Dataset):
         if filename is not None:
             if not hasattr(self, "iter_examples"):
                 if shuffle:
-                    np.random.shuffle(self.files)
-                self.iter_examples = iter(self.files)
+                    np.random.shuffle(self.files[self.phase])
+                self.iter_examples = iter(self.files[self.phase])
             filename = next(self.iter_examples)
         dataset_name = split(split(split(filename)[0])[0])[-1]
         dataset_names = [d.name for d in self.datasets]
@@ -461,7 +462,9 @@ class Hybrid(Dataset):
         super().tfdataset(phase, shuffle, tooutputs, toinputs, batch_size)
         for d in self.datasets:
             d.tfdataset(phase, shuffle, tooutputs, toinputs, batch_size)
-        self.files = list(chain(*[d.files for d in self.datasets]))
+        self.files[self.phase] = list(
+            chain(*[d.files[self.phase] for d in self.datasets])
+        )
         self.on_batch_end()
         return self
 
