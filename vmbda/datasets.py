@@ -467,11 +467,15 @@ class Hybrid(Dataset):
         qty_split = min(len(d.files[phase]) for d in self.datasets)
         for d in self.datasets:
             d.files[phase] = d.files[phase][:qty_split]
-        self.files[self.phase] = list(
-            chain(*[d.files[self.phase] for d in self.datasets])
+        self.files[phase] = list(
+            chain(*[d.files[phase] for d in self.datasets])
         )
+        if shuffle:
+            np.random.shuffle(self.files[phase])
+        self.iter_examples = cycle(self.files[phase])
+
         self.on_batch_end()
-        return self
+        return copy(self)
 
 
 class MarineModel(MarineModel):
