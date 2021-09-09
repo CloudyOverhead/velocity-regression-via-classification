@@ -464,6 +464,9 @@ class Hybrid(Dataset):
         super().tfdataset(phase, shuffle, tooutputs, toinputs, batch_size)
         for d in self.datasets:
             d.tfdataset(phase, shuffle, tooutputs, toinputs, batch_size)
+        qty_split = min(len(d.files[phase]) for d in self.datasets)
+        for d in self.datasets:
+            d.files[phase] = d.files[phase][:qty_split]
         self.files[self.phase] = list(
             chain(*[d.files[self.phase] for d in self.datasets])
         )
