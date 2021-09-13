@@ -300,7 +300,9 @@ class Mercier(Article2D):
         self, phase="train", shuffle=True, tooutputs=None, toinputs=None,
         batch_size=1,
     ):
-        if not hasattr(self, 'preloaded'):
+        if phase == "validate" and self.validatesize == 0:
+            return
+        if not hasattr(self, 'preloaded') or self.phase != phase:
             super().tfdataset(phase, shuffle, tooutputs, toinputs, batch_size)
             self.preloaded = {}
             for file in self.files[self.phase]:
