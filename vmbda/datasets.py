@@ -380,7 +380,7 @@ class USGS(Mercier, Article2D):
 
 
 def decorate_preprocess(self):
-    def preprocess_real_data(data, labels, use_agc=True):
+    def preprocess_real_data(data, labels, use_agc=False):
         acquire = self.acquire
         ng = int(round((acquire.gmax-acquire.gmin) / acquire.dg))
         ns = data.shape[1] // ng
