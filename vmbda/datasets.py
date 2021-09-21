@@ -556,10 +556,10 @@ class Vrms(Vrms):
         self, data, weights=None, axs=None, cmap='inferno', vmin=None,
         vmax=None, clip=1, ims=None, std_min=None, std_max=None,
     ):
-        mean, std = data
+        max_, std = data
         weights = weights[..., 0, 0]
 
-        ims = super().plot(mean, weights, axs, cmap, vmin, vmax, clip, ims)
+        ims = super().plot(max_, weights, axs, cmap, vmin, vmax, clip, ims)
 
         if std.max()-std.min() > 0:
             if std_min is None:
@@ -592,14 +592,15 @@ class Vrms(Vrms):
         bins = np.mean([bins[:-1], bins[1:]], axis=0)
         v = np.zeros_like(prob)
         v[:] = bins[None, None]
+        max_ = bins[np.argmax(prob, axis=-1)]
         mean = np.average(v, weights=prob, axis=-1)
         var = np.average((v-mean[..., None])**2, weights=prob, axis=-1)
         std = np.sqrt(var)
 
         vmin, vmax = self.model.properties["vp"]
-        mean = mean*(vmax-vmin) + vmin
+        max_ = max_*(vmax-vmin) + vmin
         std = std * (vmax-vmin)
-        return mean, std
+        return max_, std
 
 
 class Vint(Vrms, Vint):
