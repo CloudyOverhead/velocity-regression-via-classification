@@ -472,15 +472,3 @@ def make_converter_stochastic(converter, batch_size, qty_bins, tries):
     matches = tf.cast(v == bins, dtype=tf.float32)
     p = tf.reduce_sum(matches, axis=0, keepdims=False) / tries
     return Model(inputs=input, outputs=p, name=f"stochastic_{converter.name}")
-
-
-@tf.custom_gradient
-def reverse_gradient(x):
-    """Reverse the gradient, as performed in Gradient Reversal Layers (GRL).
-
-    Provided by FalconUA (https://stackoverflow.com/a/56852417).
-    """
-    y = tf.identity(x)
-    def custom_grad(dy):
-        return -dy
-    return y, custom_grad
