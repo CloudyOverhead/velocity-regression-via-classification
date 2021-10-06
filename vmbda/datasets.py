@@ -228,29 +228,17 @@ class Mercier(Article2D):
     def set_dataset(self):
         model, acquire, inputs, outputs = super().set_dataset()
 
-        self.trainsize = 37
+        self.trainsize = 1
         self.validatesize = 0
-        self.testsize = 37
+        self.testsize = 1
 
-        model.dh = dh = .5
-        model.NZ = 100 / dh
-        model.vp_min = 1300.0
-        model.vp_max = 4000.0
+        model.NX = NS*acquire.ds + acquire.gmax + 2*acquire.Npad
+        model.NZ = 2000
 
-        acquire.dt = 2.5E-4
-        acquire.NT = int(1 / acquire.dt)
-        acquire.resampling = 1
-        acquire.dg = 3
-        acquire.ds = 9
-        acquire.minoffset = 5.5
-        acquire.gmin = int(acquire.minoffset / dh)
-        acquire.gmax = int((acquire.minoffset+48*acquire.dg*dh) / dh)
-        acquire.fs = True
-        acquire.source_depth = 1 * dh
-        acquire.receiver_depth = 1 * dh
-        acquire.tdelay = 0
-        acquire.singleshot = False
-        acquire.configuration = 'inline'
+        dt = acquire.dt * acquire.resampling
+        real_tdelay = 0
+        pad = int((acquire.tdelay-real_tdelay) / dt)
+        acquire.NT = (3071+pad) * acquire.resampling
 
         inputs = {ShotGather.name: ShotGather(model=model, acquire=acquire)}
         bins = self.params.decode_bins
@@ -268,7 +256,6 @@ class Mercier(Article2D):
         for output in outputs.values():
             input.train_on_shots = False
             output.identify_direct = False
-
         return model, acquire, inputs, outputs
 
     def get_example(
@@ -322,63 +309,6 @@ class Mercier(Article2D):
                     self.files[self.phase].append(filename)
         self.on_batch_end()
         return self
-
-
-class USGS(Mercier, Article2D):
-    def get_example(
-        self, filename=None, phase="train", tooutputs=None, toinputs=None,
-        batch_size=1,
-    ):
-        inputs, labels, weights, filename = super().get_example(
-            filename, phase, tooutputs, toinputs, batch_size,
-        )
-        if phase == "train":
-            inputs['shotgather'] = inputs['shotgather'][:2000]
-            for output in ['ref', 'vrms', 'vint']:
-                labels[output] = labels[output][:2000]
-                weights[output] = weights[output][:2000]
-            max_depth = self.NZ - (self.acquire.Npad+4)
-            labels['vdepth'] = labels['vdepth'][:max_depth]
-            weights['vdepth'] = weights['vdepth'][:max_depth]
-        return inputs, labels, weights, filename
-
-    def tfdataset(self, phase="train", *args, **kwargs):
-        if phase in ["train", "validation"]:
-            self.NZ = 752 * 2
-        return super().tfdataset(phase, *args, **kwargs)
-
-    def set_dataset(self):
-        model, acquire, inputs, outputs = Article2D.set_dataset(self)
-
-        self.trainsize = 1
-        self.validatesize = 0
-        self.testsize = 1
-
-        model.NX = NS*acquire.ds + acquire.gmax + 2*acquire.Npad
-        model.NZ = 2000
-
-        dt = acquire.dt * acquire.resampling
-        real_tdelay = 0
-        pad = int((acquire.tdelay-real_tdelay) / dt)
-        acquire.NT = (3071+pad) * acquire.resampling
-
-        inputs = {ShotGather.name: ShotGather(model=model, acquire=acquire)}
-        bins = self.params.decode_bins
-        outputs = {
-            Reftime.name: Reftime(model=model, acquire=acquire),
-            Vrms.name: Vrms(model=model, acquire=acquire, bins=bins),
-            Vint.name: Vint(model=model, acquire=acquire, bins=bins),
-            Vdepth.name: Vdepth(model=model, acquire=acquire, bins=bins),
-            IsReal.name: IsReal(True),
-        }
-        for input in inputs.values():
-            input.mute_dir = False
-            input.train_on_shots = False
-            input.preprocess = decorate_preprocess(input)
-        for output in outputs.values():
-            input.train_on_shots = False
-            output.identify_direct = False
-        return model, acquire, inputs, outputs
 
 
 def decorate_preprocess(self):
