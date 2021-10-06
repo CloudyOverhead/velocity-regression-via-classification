@@ -2,7 +2,7 @@
 
 from os.path import abspath, join, split
 from glob import glob
-from itertools import chain
+from itertools import chain, cycle
 from copy import copy
 
 import numpy as np
@@ -43,6 +43,16 @@ class Dataset(GeoDataset, Sequence):
         if tooutputs is None:
             tooutputs = list(self.outputs.keys())
         tooutputs = [out for out in tooutputs if out != 'is_real']
+
+        if filename is None:
+            do_reset_iterator = (
+                not hasattr(self, "iter_examples")
+                or not self.files[self.phase]
+            )
+            if do_reset_iterator:
+                self.tfdataset(phase, shuffle, tooutputs, toinputs)
+            filename = next(self.iter_examples)
+
         inputs, labels, weights, filename = super().get_example(
             filename, phase, shuffle, toinputs, tooutputs,
         )
@@ -56,6 +66,7 @@ class Dataset(GeoDataset, Sequence):
     ):
         if phase == "validate" and self.validatesize == 0:
             return
+        self.phase = phase
 
         self.shuffle = shuffle
         self.tooutputs = tooutputs
@@ -68,11 +79,15 @@ class Dataset(GeoDataset, Sequence):
             "test": self.datatest,
         }
         pathstr = join(phases[phase], 'example_*')
-        self.files = glob(pathstr)
+        self.files[self.phase] = glob(pathstr)
+
+        if shuffle:
+            np.random.shuffle(self.files[self.phase])
+        self.iter_examples = cycle(self.files[self.phase])
 
         self.on_batch_end()
 
-        return self
+        return copy(self)
 
     def __getitem__(self, idx):
         batch = self.batches_idx[idx]
@@ -80,7 +95,7 @@ class Dataset(GeoDataset, Sequence):
         data['filename'] = []
         labels = {out: [] for out in self.tooutputs}
         for i in batch:
-            filename = self.files[i]
+            filename = self.files[self.phase][i]
             data_i, labels_i, weights_i, _ = self.get_example(
                 filename=filename,
                 toinputs=self.toinputs,
@@ -98,7 +113,7 @@ class Dataset(GeoDataset, Sequence):
         return data, labels
 
     def __len__(self):
-        return int(len(self.files) / self.batch_size)
+        return int(len(self.files[self.phase]) / self.batch_size)
 
     def on_batch_end(self):
         self.batches_idx = np.arange(len(self) * self.batch_size)
@@ -285,16 +300,18 @@ class Mercier(Article2D):
         self, phase="train", shuffle=True, tooutputs=None, toinputs=None,
         batch_size=1,
     ):
-        super().tfdataset(phase, shuffle, tooutputs, toinputs, batch_size)
-        if not hasattr(self, 'preloaded'):
+        if phase == "validate" and self.validatesize == 0:
+            return
+        if not hasattr(self, 'preloaded') or self.phase != phase:
+            super().tfdataset(phase, shuffle, tooutputs, toinputs, batch_size)
             self.preloaded = {}
-            for file in self.files:
+            for file in self.files[self.phase]:
                 self.preloaded[file] = super().get_example(
                     file, phase, shuffle, toinputs, tooutputs,
                 )
 
-            files = self.files
-            self.files = []
+            files = self.files[self.phase]
+            self.files[self.phase] = []
             for file in files:
                 inputs, _, _, _ = self.preloaded[file]
                 shotgather = inputs['shotgather']
@@ -302,7 +319,7 @@ class Mercier(Article2D):
                 for slice_start in range(0, slice_max+1):
                     slice_end = slice_start + EXPECTED_WIDTH
                     filename = file + f'[{slice_start}:{slice_end}]'
-                    self.files.append(filename)
+                    self.files[self.phase].append(filename)
         self.on_batch_end()
         return self
 
@@ -365,7 +382,7 @@ class USGS(Mercier, Article2D):
 
 
 def decorate_preprocess(self):
-    def preprocess_real_data(data, labels, use_agc=True):
+    def preprocess_real_data(data, labels, use_agc=False):
         acquire = self.acquire
         ng = int(round((acquire.gmax-acquire.gmin) / acquire.dg))
         ns = data.shape[1] // ng
@@ -426,13 +443,18 @@ class Hybrid(Dataset):
         self, filename=None, phase="train", shuffle=True, toinputs=None,
         tooutputs=None,
     ):
-        if filename is not None:
-            dataset_name = split(split(split(filename)[0])[0])[-1]
-            dataset_names = [d.name for d in self.datasets]
-            select_dataset = dataset_names.index(dataset_name)
-            dataset = self.datasets[select_dataset]
-        else:
-            dataset = self.datasets[0]
+        if filename is None:
+            do_reset_iterator = (
+                not hasattr(self, "iter_examples")
+                or not self.files[self.phase]
+            )
+            if do_reset_iterator:
+                self.tfdataset(phase, shuffle, tooutputs, toinputs)
+            filename = next(self.iter_examples)
+        dataset_name = split(split(split(filename)[0])[0])[-1]
+        dataset_names = [d.name for d in self.datasets]
+        select_dataset = dataset_names.index(dataset_name)
+        dataset = self.datasets[select_dataset]
         return dataset.get_example(
             filename, phase, shuffle, toinputs, tooutputs,
         )
@@ -444,9 +466,18 @@ class Hybrid(Dataset):
         super().tfdataset(phase, shuffle, tooutputs, toinputs, batch_size)
         for d in self.datasets:
             d.tfdataset(phase, shuffle, tooutputs, toinputs, batch_size)
-        self.files = list(chain(*[d.files for d in self.datasets]))
+        qty_split = min(len(d.files[phase]) for d in self.datasets)
+        for d in self.datasets:
+            d.files[phase] = d.files[phase][:qty_split]
+        self.files[phase] = list(
+            chain(*[d.files[phase] for d in self.datasets])
+        )
+        if shuffle:
+            np.random.shuffle(self.files[phase])
+        self.iter_examples = cycle(self.files[phase])
+
         self.on_batch_end()
-        return self
+        return copy(self)
 
 
 class MarineModel(MarineModel):
@@ -525,10 +556,10 @@ class Vrms(Vrms):
         self, data, weights=None, axs=None, cmap='inferno', vmin=None,
         vmax=None, clip=1, ims=None, std_min=None, std_max=None,
     ):
-        mean, std = data
-        weights = weights[..., 0]
+        max_, std = data
+        weights = weights[..., 0, 0]
 
-        ims = super().plot(mean, weights, axs, cmap, vmin, vmax, clip, ims)
+        ims = super().plot(max_, weights, axs, cmap, vmin, vmax, clip, ims)
 
         if std.max()-std.min() > 0:
             if std_min is None:
@@ -556,18 +587,20 @@ class Vrms(Vrms):
         return one_hot, weight
 
     def postprocess(self, prob):
+        prob = prob[..., 0]
         bins = np.linspace(0, 1, self.bins+1)
         bins = np.mean([bins[:-1], bins[1:]], axis=0)
         v = np.zeros_like(prob)
         v[:] = bins[None, None]
+        max_ = bins[np.argmax(prob, axis=-1)]
         mean = np.average(v, weights=prob, axis=-1)
         var = np.average((v-mean[..., None])**2, weights=prob, axis=-1)
         std = np.sqrt(var)
 
         vmin, vmax = self.model.properties["vp"]
-        mean = mean*(vmax-vmin) + vmin
+        max_ = max_*(vmax-vmin) + vmin
         std = std * (vmax-vmin)
-        return mean, std
+        return max_, std
 
 
 class Vint(Vrms, Vint):
@@ -585,6 +618,15 @@ class IsReal(GraphOutput):
         self.is_real = np.array([is_real], dtype=float)
         self.is_real = self.is_real.reshape([1, 1, 1])
         super().__init__(None, None)
+
+    def plot(
+        self, data, weights=None, axs=None, cmap='inferno', vmin=0, vmax=1,
+        clip=1, ims=None,
+    ):
+        weights = weights[..., 0]
+        return super().plot(
+            data, weights, axs, cmap, vmin, vmax, clip, ims,
+        )
 
     def generate(self, data, props):
         return self.is_real

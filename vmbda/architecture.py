@@ -403,7 +403,7 @@ class Hyperparameters1D(Hyperparameters):
         super().__init__()
 
         self.steps_per_epoch = 100
-        self.batch_size = 24
+        self.batch_size = 2
 
         self.learning_rate = 8E-4
 
