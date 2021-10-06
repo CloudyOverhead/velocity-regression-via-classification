@@ -172,7 +172,6 @@ class Article1D(Dataset):
             Vrms.name: Vrms(model=model, acquire=acquire, bins=bins),
             Vint.name: Vint(model=model, acquire=acquire, bins=bins),
             Vdepth.name: Vdepth(model=model, acquire=acquire, bins=bins),
-            IsReal.name: IsReal(False),
         }
 
         for input in inputs.values():
@@ -212,7 +211,6 @@ class Article2D(Article1D):
             VrmsCrop.name: VrmsCrop(model=model, acquire=acquire, bins=bins),
             VintCrop.name: VintCrop(model=model, acquire=acquire, bins=bins),
             VdepthCrop.name: VdepthCrop(model=model, acquire=acquire, bins=bins),
-            IsReal.name: IsReal(False),
         }
         for input in inputs.values():
             input.train_on_shots = False
@@ -247,7 +245,6 @@ class Mercier(Article2D):
             Vrms.name: Vrms(model=model, acquire=acquire, bins=bins),
             Vint.name: Vint(model=model, acquire=acquire, bins=bins),
             Vdepth.name: Vdepth(model=model, acquire=acquire, bins=bins),
-            IsReal.name: IsReal(True),
         }
         for input in inputs.values():
             input.mute_dir = False
@@ -257,58 +254,6 @@ class Mercier(Article2D):
             input.train_on_shots = False
             output.identify_direct = False
         return model, acquire, inputs, outputs
-
-    def get_example(
-        self, filename=None, phase="train", shuffle=True, toinputs=None,
-        tooutputs=None,
-    ):
-        if "[" in filename:
-            start = filename.find('[')
-            filename, slice = filename[:start], filename[start+1:-1]
-            slice_start, slice_end = slice.split(':')
-            slice_start, slice_end = int(slice_start), int(slice_end)
-        else:
-            slice = None
-        inputs, labels, weights, filename = self.preloaded[filename]
-        inputs, labels, weights = copy(inputs), copy(labels), copy(weights)
-        if slice is not None:
-            input = inputs['shotgather']
-            inputs['shotgather'] = input[:, :, slice_start:slice_end]
-            for key in labels.keys():
-                label = labels[key]
-                weight = weights[key]
-                if key == 'is_real':
-                    continue
-                labels[key] = label[:, slice_start:slice_end]
-                weights[key] = weight[:, slice_start:slice_end]
-        return inputs, labels, weights, filename
-
-    def tfdataset(
-        self, phase="train", shuffle=True, tooutputs=None, toinputs=None,
-        batch_size=1,
-    ):
-        if phase == "validate" and self.validatesize == 0:
-            return
-        if not hasattr(self, 'preloaded') or self.phase != phase:
-            super().tfdataset(phase, shuffle, tooutputs, toinputs, batch_size)
-            self.preloaded = {}
-            for file in self.files[self.phase]:
-                self.preloaded[file] = super().get_example(
-                    file, phase, shuffle, toinputs, tooutputs,
-                )
-
-            files = self.files[self.phase]
-            self.files[self.phase] = []
-            for file in files:
-                inputs, _, _, _ = self.preloaded[file]
-                shotgather = inputs['shotgather']
-                slice_max = shotgather.shape[2] - EXPECTED_WIDTH
-                for slice_start in range(0, slice_max+1):
-                    slice_end = slice_start + EXPECTED_WIDTH
-                    filename = file + f'[{slice_start}:{slice_end}]'
-                    self.files[self.phase].append(filename)
-        self.on_batch_end()
-        return self
 
 
 def decorate_preprocess(self):
@@ -359,55 +304,6 @@ def decorate_preprocess(self):
         data = np.expand_dims(data, axis=-1)
         return data
     return preprocess_real_data
-
-
-class Hybrid(Dataset):
-    def __init__(self, params, noise=False):
-        super().__init__(params, noise)
-        self.datasets = [Article1D(params, noise), USGS(params, noise)]
-
-    def set_dataset(self):
-        return Article1D.set_dataset(self)
-
-    def get_example(
-        self, filename=None, phase="train", shuffle=True, toinputs=None,
-        tooutputs=None,
-    ):
-        if filename is None:
-            do_reset_iterator = (
-                not hasattr(self, "iter_examples")
-                or not self.files[self.phase]
-            )
-            if do_reset_iterator:
-                self.tfdataset(phase, shuffle, tooutputs, toinputs)
-            filename = next(self.iter_examples)
-        dataset_name = split(split(split(filename)[0])[0])[-1]
-        dataset_names = [d.name for d in self.datasets]
-        select_dataset = dataset_names.index(dataset_name)
-        dataset = self.datasets[select_dataset]
-        return dataset.get_example(
-            filename, phase, shuffle, toinputs, tooutputs,
-        )
-
-    def tfdataset(
-        self, phase="train", shuffle=True, tooutputs=None, toinputs=None,
-        batch_size=1,
-    ):
-        super().tfdataset(phase, shuffle, tooutputs, toinputs, batch_size)
-        for d in self.datasets:
-            d.tfdataset(phase, shuffle, tooutputs, toinputs, batch_size)
-        qty_split = min(len(d.files[phase]) for d in self.datasets)
-        for d in self.datasets:
-            d.files[phase] = d.files[phase][:qty_split]
-        self.files[phase] = list(
-            chain(*[d.files[phase] for d in self.datasets])
-        )
-        if shuffle:
-            np.random.shuffle(self.files[phase])
-        self.iter_examples = cycle(self.files[phase])
-
-        self.on_batch_end()
-        return copy(self)
 
 
 class MarineModel(MarineModel):
@@ -539,27 +435,6 @@ class Vint(Vrms, Vint):
 
 class Vdepth(Vrms, Vdepth):
     pass
-
-
-class IsReal(GraphOutput):
-    name = 'is_real'
-
-    def __init__(self, is_real):
-        self.is_real = np.array([is_real], dtype=float)
-        self.is_real = self.is_real.reshape([1, 1, 1])
-        super().__init__(None, None)
-
-    def plot(
-        self, data, weights=None, axs=None, cmap='inferno', vmin=0, vmax=1,
-        clip=1, ims=None,
-    ):
-        weights = weights[..., 0]
-        return super().plot(
-            data, weights, axs, cmap, vmin, vmax, clip, ims,
-        )
-
-    def generate(self, data, props):
-        return self.is_real
 
 
 class ShotGather(ShotGather):
