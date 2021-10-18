@@ -42,7 +42,6 @@ class Dataset(GeoDataset, Sequence):
     ):
         if tooutputs is None:
             tooutputs = list(self.outputs.keys())
-        tooutputs = [out for out in tooutputs if out != 'is_real']
 
         if filename is None:
             do_reset_iterator = (
@@ -56,8 +55,6 @@ class Dataset(GeoDataset, Sequence):
         inputs, labels, weights, filename = super().get_example(
             filename, phase, shuffle, toinputs, tooutputs,
         )
-        labels['is_real'] = self.outputs['is_real'].is_real
-        weights['is_real'] = np.ones_like(labels['is_real'])
         return inputs, labels, weights, filename
 
     def tfdataset(
