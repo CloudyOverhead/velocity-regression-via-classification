@@ -18,15 +18,27 @@ from tensorflow.keras.losses import (
 from tensorflow.keras.backend import reshape
 from tensorflow.python.ops.math_ops import _bucketize as digitize
 from GeoFlow.DefinedNN.RCNN2D import RCNN2D, Hyperparameters, build_rcnn
-from GeoFlow.Losses import ref_loss
+from GeoFlow.Losses import ref_loss, v_compound_loss
 from GeoFlow.SeismicUtilities import (
     build_vint_to_vrms_converter, build_time_to_depth_converter,
 )
 
 
-class RCNN2D(RCNN2D):
+class RCNN2DRegressor(RCNN2D):
     toinputs = ["shotgather"]
     tooutputs = ["ref", "vrms", "vint", "vdepth"]
+
+    def __init__(
+            input_shapes, params, dataset, checkpoint_dir, devices=None,
+            run_eagerly=False,
+        ):
+        params = deepcopy(params)
+        params.decode_bins = 1
+        params.decode_tries = 1
+        super().__init__(
+            input_shapes, params, dataset, checkpoint_dir, devices,
+            run_eagerly,
+        )
 
     def build_network(self, inputs):
         params = self.params
@@ -110,23 +122,11 @@ class RCNN2D(RCNN2D):
             batch_size,
             name="vrms",
         )
-        self.decoder['vrms'] = make_converter_stochastic(
-            self.decoder['vrms'],
-            batch_size,
-            params.decode_bins,
-            params.decode_tries,
-        )
         self.decoder['vdepth'] = build_time_to_depth_converter(
             self.dataset,
             vint_shape,
             batch_size,
             name="vdepth",
-        )
-        self.decoder['vdepth'] = make_converter_stochastic(
-            self.decoder['vdepth'],
-            batch_size,
-            params.decode_bins,
-            params.decode_tries,
         )
 
     def call(self, inputs):
@@ -156,7 +156,10 @@ class RCNN2D(RCNN2D):
             if lbl == 'ref':
                 losses[lbl] = ref_loss()
             else:
-                losses[lbl] = stochastic_v_loss(self.params.decode_bins)
+                if lbl == 'vrms':
+                    losses[lbl] = v_compound_loss(beta=.0, normalize=True)
+                else:
+                    losses[lbl] = v_compound_loss(normalize=True)
             losses_weights[lbl] = self.params.loss_scales[lbl]
 
         return losses, losses_weights
@@ -191,6 +194,37 @@ class RCNN2D(RCNN2D):
                 self.dataset.generator.write_predictions(
                     exampleid, savedir, example_evaluated,
                 )
+
+
+class RCNN2DClassifier(RCNN2DRegressor):
+    toinputs = ["shotgather"]
+    tooutputs = ["ref", "vrms", "vint", "vdepth"]
+
+    def build_network(self, inputs):
+        super().build_network(inputs)
+        self.decoder['vrms'] = make_converter_stochastic(
+            self.decoder['vrms'],
+            batch_size,
+            params.decode_bins,
+            params.decode_tries,
+        )
+        self.decoder['vdepth'] = make_converter_stochastic(
+            self.decoder['vdepth'],
+            batch_size,
+            params.decode_bins,
+            params.decode_tries,
+        )
+
+    def build_losses(self):
+        losses, losses_weights = {}, {}
+        for lbl in self.tooutputs:
+            if lbl == 'ref':
+                losses[lbl] = ref_loss()
+            else:
+                losses[lbl] = stochastic_v_loss(self.params.decode_bins)
+            losses_weights[lbl] = self.params.loss_scales[lbl]
+
+        return losses, losses_weights
 
 
 def build_encoder(
@@ -258,7 +292,7 @@ def build_rnn(
     return rnn
 
 
-class RCNN2DUnpackReal(RCNN2D):
+class RCNN2DUnpackReal(RCNN2DClassifier):
     def __init__(
         self, input_shapes, params, dataset, checkpoint_dir, devices,
         run_eagerly,
