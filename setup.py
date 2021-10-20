@@ -31,12 +31,13 @@ REQUIREMENTS = [
 ]
 
 setup(
-    name="vmbda",
+    name="vmbrc",
     version="0.0.1",
     author="Jérome Simon",
     author_email="jerome.simon@ete.inrs.ca",
     description=(
-        "Bridging the domain gap in deep-learning velocity model building"
+        "Velocity model building via a Bayesian interpretation of "
+        "classification"
     ),
     long_description=long_description,
     long_description_content_type="text/markdown",

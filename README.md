@@ -1,1 +1,1 @@
-# Velocity model building via a Bayesian interpretation of classification 
+# Velocity model building via a Bayesian interpretation of classification
