@@ -28,17 +28,11 @@ class RCNN2DRegressor(RCNN2D):
     toinputs = ["shotgather"]
     tooutputs = ["ref", "vrms", "vint", "vdepth"]
 
-    def __init__(
-            input_shapes, params, dataset, checkpoint_dir, devices=None,
-            run_eagerly=False,
-        ):
+    def __init__(self, input_shapes, params, *args, **kwargs):
         params = deepcopy(params)
         params.decode_bins = 1
         params.decode_tries = 1
-        super().__init__(
-            input_shapes, params, dataset, checkpoint_dir, devices,
-            run_eagerly,
-        )
+        super().__init__(input_shapes, params, *args, **kwargs)
 
     def build_network(self, inputs):
         params = self.params
