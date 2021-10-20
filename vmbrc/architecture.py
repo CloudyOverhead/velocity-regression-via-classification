@@ -165,6 +165,8 @@ class RCNN2DClassifier(RCNN2DRegressor):
 
     def build_network(self, inputs):
         super().build_network(inputs)
+        params = self.params
+        batch_size = self.params.batch_size
         self.decoder['vrms'] = make_converter_stochastic(
             self.decoder['vrms'],
             batch_size,
