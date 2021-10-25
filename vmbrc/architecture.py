@@ -28,12 +28,6 @@ class RCNN2DRegressor(RCNN2D):
     toinputs = ["shotgather"]
     tooutputs = ["ref", "vrms", "vint", "vdepth"]
 
-    def __init__(self, input_shapes, params, *args, **kwargs):
-        params = deepcopy(params)
-        params.decode_bins = 1
-        params.decode_tries = 1
-        super().__init__(input_shapes, params, *args, **kwargs)
-
     def build_network(self, inputs):
         params = self.params
         batch_size = self.params.batch_size
@@ -99,13 +93,11 @@ class RCNN2DRegressor(RCNN2D):
 
         input_shape = self.rnn.output_shape
         self.decoder['vint'] = Conv2D(
-            params.decode_bins,
+            1,
             params.decode_kernel,
             padding='same',
-            activation='softmax',
             input_shape=input_shape,
             batch_size=batch_size,
-            use_bias=False,
             name="vint",
         )
 
@@ -149,11 +141,10 @@ class RCNN2DRegressor(RCNN2D):
         for lbl in self.tooutputs:
             if lbl == 'ref':
                 losses[lbl] = ref_loss()
+            elif lbl == 'vrms':
+                losses[lbl] = v_compound_loss(beta=.0, normalize=False)
             else:
-                if lbl == 'vrms':
-                    losses[lbl] = v_compound_loss(beta=.0, normalize=True)
-                else:
-                    losses[lbl] = v_compound_loss(normalize=True)
+                losses[lbl] = v_compound_loss(normalize=False)
             losses_weights[lbl] = self.params.loss_scales[lbl]
 
         return losses, losses_weights
@@ -167,6 +158,17 @@ class RCNN2DClassifier(RCNN2DRegressor):
         super().build_network(inputs)
         params = self.params
         batch_size = self.params.batch_size
+        input_shape = self.rnn.output_shape
+        self.decoder['vint'] = Conv2D(
+            params.decode_bins,
+            params.decode_kernel,
+            padding='same',
+            activation='softmax',
+            input_shape=input_shape,
+            batch_size=batch_size,
+            use_bias=False,
+            name="vint",
+        )
         self.decoder['vrms'] = make_converter_stochastic(
             self.decoder['vrms'],
             batch_size,
