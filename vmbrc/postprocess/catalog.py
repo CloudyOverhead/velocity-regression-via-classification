@@ -1,5 +1,5 @@
 from os import listdir, remove
-from os.path import join, exists
+from os.path import join, exists, split
 
 from matplotlib.figure import Figure
 from matplotlib import pyplot as plt
@@ -8,7 +8,8 @@ from inflection import underscore
 
 
 class Catalog(list):
-    dir = join('postprocess', 'figures')
+    dir, _ = split(__file__)
+    dir = join(dir, 'figures')
 
     def __getitem__(self, idx):
         if isinstance(idx, str):
