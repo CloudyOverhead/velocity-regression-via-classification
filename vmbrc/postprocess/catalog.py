@@ -33,14 +33,14 @@ class Catalog(list):
             figure.generate()
             figure.save(show=show)
 
-    def regenerate(self, idx):
+    def regenerate(self, idx, gpus):
         figure = self[idx]
         metadata = figure.Metadata()
-        metadata.generate()
+        metadata.generate(gpus)
 
-    def regenerate_all(self):
+    def regenerate_all(self, gpus):
         for i in range(len(self)):
-            self.regenerate(i)
+            self.regenerate(i, gpus)
 
     def clear_all(self):
         for filename in listdir(self.dir):
@@ -66,7 +66,7 @@ class Metadata(File):
         if is_not_generated:
             self.generate()
 
-    def generate(self):
+    def generate(self, gpus):
         raise NotImplementedError
 
     def __setitem__(self, key, value):
