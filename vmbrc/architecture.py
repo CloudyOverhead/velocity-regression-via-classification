@@ -216,28 +216,6 @@ def build_encoder(
     return encoder
 
 
-def build_discriminator(
-    units, input_shape, batch_size, input_dtype=tf.float32,
-    name="discriminator",
-):
-    input_shape = input_shape[1:]
-    input = Input(shape=input_shape, batch_size=batch_size, dtype=input_dtype)
-
-    data_stream = input[:, :2000]
-    data_stream = reverse_gradient(data_stream)
-    batches = data_stream.get_shape()[0]
-    data_stream = reshape(data_stream, [batches, -1])
-    for current_units in units:
-        dense = Dense(current_units, activation='relu')
-        data_stream = dense(data_stream)
-    dense = Dense(1, activation='sigmoid')
-    data_stream = dense(data_stream)
-    data_stream = reshape(data_stream, [batches, 1, 1, 1])
-
-    discriminator = Model(inputs=input, outputs=data_stream, name=name)
-    return discriminator
-
-
 def build_rnn(
     units, input_shape, batch_size, input_dtype=tf.float32, name="rnn",
 ):
