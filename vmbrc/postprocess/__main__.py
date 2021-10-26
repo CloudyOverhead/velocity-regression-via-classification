@@ -1,7 +1,6 @@
 from argparse import ArgumentParser
 
-from vmbrc.postprocess import *
-from catalog import catalog
+from vmbrc.postprocess.catalog import catalog
 
 
 parser = ArgumentParser()
