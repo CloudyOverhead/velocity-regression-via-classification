@@ -3,8 +3,8 @@
 
 from GeoFlow.AutomatedTraining.AutomatedTraining import optimize
 
-from vmbda.__main__ import parser
-from vmbda import architecture, datasets
+from vmbrc.__main__ import parser
+from vmbrc import architecture, datasets
 
 
 args, config = parser.parse_known_args()

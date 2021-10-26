@@ -1,1 +1,1 @@
-# Bridging the domain gap in deep-learning velocity model building
+# Velocity model building via a Bayesian interpretation of classification

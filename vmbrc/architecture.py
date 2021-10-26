@@ -10,7 +10,7 @@ import tensorflow as tf
 from tensorflow.keras import Model, Sequential
 from tensorflow.keras.layers import (
     Conv3D, Conv3DTranspose, Conv2D, Bidirectional, LSTM, Permute, Input, ReLU,
-    Dropout, Dense,
+    Dropout,
 )
 from tensorflow.keras.losses import (
     categorical_crossentropy, binary_crossentropy,
@@ -18,15 +18,15 @@ from tensorflow.keras.losses import (
 from tensorflow.keras.backend import reshape
 from tensorflow.python.ops.math_ops import _bucketize as digitize
 from GeoFlow.DefinedNN.RCNN2D import RCNN2D, Hyperparameters, build_rcnn
-from GeoFlow.Losses import ref_loss, make_loss_compatible
+from GeoFlow.Losses import ref_loss, v_compound_loss
 from GeoFlow.SeismicUtilities import (
     build_vint_to_vrms_converter, build_time_to_depth_converter,
 )
 
 
-class RCNN2D(RCNN2D):
+class RCNN2DRegressor(RCNN2D):
     toinputs = ["shotgather"]
-    tooutputs = ["ref", "vrms", "vint", "vdepth", "is_real"]
+    tooutputs = ["ref", "vrms", "vint", "vdepth"]
 
     def build_network(self, inputs):
         params = self.params
@@ -72,14 +72,6 @@ class RCNN2D(RCNN2D):
         shape_before_pooling = np.array(self.rcnn.output_shape)
         shape_after_pooling = tuple(shape_before_pooling[[0, 1, 3, 4]])
 
-        self.discriminator = build_discriminator(
-            units=params.discriminator_units,
-            input_shape=shape_after_pooling,
-            batch_size=batch_size,
-        )
-        if params.freeze_discriminator:
-            self.discriminator.trainable = False
-
         self.decoder['ref'] = Conv2D(
             1,
             params.decode_ref_kernel,
@@ -101,13 +93,11 @@ class RCNN2D(RCNN2D):
 
         input_shape = self.rnn.output_shape
         self.decoder['vint'] = Conv2D(
-            params.decode_bins,
+            1,
             params.decode_kernel,
             padding='same',
-            activation='softmax',
             input_shape=input_shape,
             batch_size=batch_size,
-            use_bias=False,
             name="vint",
         )
 
@@ -118,23 +108,11 @@ class RCNN2D(RCNN2D):
             batch_size,
             name="vrms",
         )
-        self.decoder['vrms'] = make_converter_stochastic(
-            self.decoder['vrms'],
-            batch_size,
-            params.decode_bins,
-            params.decode_tries,
-        )
         self.decoder['vdepth'] = build_time_to_depth_converter(
             self.dataset,
             vint_shape,
             batch_size,
             name="vdepth",
-        )
-        self.decoder['vdepth'] = make_converter_stochastic(
-            self.decoder['vdepth'],
-            batch_size,
-            params.decode_bins,
-            params.decode_tries,
         )
 
     def call(self, inputs):
@@ -145,8 +123,6 @@ class RCNN2D(RCNN2D):
         while data_stream.shape[2] != 1:
             data_stream = self.rvcnn(data_stream)
         data_stream = data_stream[:, :, 0]
-
-        outputs['is_real'] = self.discriminator(data_stream)
 
         outputs['ref'] = self.decoder['ref'](data_stream)
 
@@ -165,44 +141,57 @@ class RCNN2D(RCNN2D):
         for lbl in self.tooutputs:
             if lbl == 'ref':
                 losses[lbl] = ref_loss()
-            elif lbl == 'is_real':
-                losses[lbl] = make_loss_compatible(binary_crossentropy)
+            elif lbl == 'vrms':
+                losses[lbl] = v_compound_loss(beta=.0, normalize=False)
+            else:
+                losses[lbl] = v_compound_loss(normalize=False)
+            losses_weights[lbl] = self.params.loss_scales[lbl]
+
+        return losses, losses_weights
+
+
+class RCNN2DClassifier(RCNN2DRegressor):
+    toinputs = ["shotgather"]
+    tooutputs = ["ref", "vrms", "vint", "vdepth"]
+
+    def build_network(self, inputs):
+        super().build_network(inputs)
+        params = self.params
+        batch_size = self.params.batch_size
+        input_shape = self.rnn.output_shape
+        self.decoder['vint'] = Conv2D(
+            params.decode_bins,
+            params.decode_kernel,
+            padding='same',
+            activation='softmax',
+            input_shape=input_shape,
+            batch_size=batch_size,
+            use_bias=False,
+            name="vint",
+        )
+        self.decoder['vrms'] = make_converter_stochastic(
+            self.decoder['vrms'],
+            batch_size,
+            params.decode_bins,
+            params.decode_tries,
+        )
+        self.decoder['vdepth'] = make_converter_stochastic(
+            self.decoder['vdepth'],
+            batch_size,
+            params.decode_bins,
+            params.decode_tries,
+        )
+
+    def build_losses(self):
+        losses, losses_weights = {}, {}
+        for lbl in self.tooutputs:
+            if lbl == 'ref':
+                losses[lbl] = ref_loss()
             else:
                 losses[lbl] = stochastic_v_loss(self.params.decode_bins)
             losses_weights[lbl] = self.params.loss_scales[lbl]
 
         return losses, losses_weights
-
-    def launch_testing(self, tfdataset: tf.data.Dataset, savedir: str = None):
-        if savedir is None:
-            # Save the predictions to a subfolder that has the name of the
-            # network.
-            savedir = self.name
-        savedir = join(self.dataset.datatest, savedir)
-        if not isdir(savedir):
-            mkdir(savedir)
-        if self.dataset.testsize % self.params.batch_size != 0:
-            raise ValueError(
-                "Your batch size must be a divisor of your dataset length."
-            )
-
-        for data, _ in tfdataset:
-            evaluated = self.predict(
-                data,
-                batch_size=self.params.batch_size,
-                max_queue_size=10,
-                use_multiprocessing=False,
-            )
-
-            for i, example in enumerate(data["filename"]):
-                example = example[0]
-                exampleid = int(example.split("_")[-1])
-                example_evaluated = {
-                    lbl: out[i] for lbl, out in evaluated.items()
-                }
-                self.dataset.generator.write_predictions(
-                    exampleid, savedir, example_evaluated,
-                )
 
 
 def build_encoder(
@@ -270,7 +259,7 @@ def build_rnn(
     return rnn
 
 
-class RCNN2DUnpackReal(RCNN2D):
+class RCNN2DUnpackReal(RCNN2DClassifier):
     def __init__(
         self, input_shapes, params, dataset, checkpoint_dir, devices,
         run_eagerly,
@@ -409,19 +398,16 @@ class Hyperparameters1D(Hyperparameters):
 
         self.decode_bins = 100
         self.decode_tries = 20
-        self.discriminator_units = [512, 512, 512]
-        self.freeze_discriminator = False
 
         if is_training:
-            self.epochs = (20, 10, 20, 10)
+            self.epochs = (20, 20, 10)
             self.loss_scales = (
-                {'ref': .6, 'vrms': .3, 'vint': .1, 'vdepth': .0, 'is_real': .0},
-                {'ref': .0, 'vrms': .0, 'vint': .0, 'vdepth': .0, 'is_real': 1.},
-                {'ref': .1, 'vrms': .5, 'vint': .2, 'vdepth': .0, 'is_real': .2},
-                {'ref': .1, 'vrms': .2, 'vint': .4, 'vdepth': .1, 'is_real': .2},
+                {'ref': .6, 'vrms': .3, 'vint': .1, 'vdepth': .0},
+                {'ref': .1, 'vrms': .5, 'vint': .2, 'vdepth': .0},
+                {'ref': .1, 'vrms': .2, 'vint': .4, 'vdepth': .1},
             )
-            self.seed = (0, 1, 2, 4)
-            self.freeze_to = (None, 'encoder', None, None)
+            self.seed = (0, 1, 2)
+            self.freeze_to = (None, None, None)
 
 
 class Hyperparameters2D(Hyperparameters1D):
@@ -446,8 +432,8 @@ class Hyperparameters2D(Hyperparameters1D):
             CHECKPOINT_1D = abspath(
                 join(".", "logs", "weights_1d", "0", "checkpoint_60")
             )
-            self.restore_from = (CHECKPOINT_1D, None, None, None)
-            self.seed = (5, 6, 7, 8)
+            self.restore_from = (CHECKPOINT_1D, None, None)
+            self.seed = (3, 4, 5)
 
 
 def stochastic_v_loss(decode_bins):
@@ -487,15 +473,3 @@ def make_converter_stochastic(converter, batch_size, qty_bins, tries):
     matches = tf.cast(v == bins, dtype=tf.float32)
     p = tf.reduce_sum(matches, axis=0, keepdims=False) / tries
     return Model(inputs=input, outputs=p, name=f"stochastic_{converter.name}")
-
-
-@tf.custom_gradient
-def reverse_gradient(x):
-    """Reverse the gradient, as performed in Gradient Reversal Layers (GRL).
-
-    Provided by FalconUA (https://stackoverflow.com/a/56852417).
-    """
-    y = tf.identity(x)
-    def custom_grad(dy):
-        return -dy
-    return y, custom_grad
