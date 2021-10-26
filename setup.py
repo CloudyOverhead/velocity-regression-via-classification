@@ -28,6 +28,8 @@ REQUIREMENTS = [
     "scikit-image",
     "segyio",
     "scipy",
+    "proplot",
+    "inflection",
 ]
 
 setup(
@@ -41,10 +43,7 @@ setup(
     ),
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url=(
-        "https://github.com/CloudyOverhead/"
-        "vmbda"
-    ),
+    url="https://github.com/CloudyOverhead/vmbrc",
     packages=find_packages(),
     install_requires=REQUIREMENTS,
     setup_requires=['setuptools-git'],
