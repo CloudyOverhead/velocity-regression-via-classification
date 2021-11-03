@@ -20,7 +20,7 @@ if args.metadata:
 
 if args.figure:
     figure = catalog[args.figure]
-    figure.generate()
+    figure.generate(args.gpus)
     figure.save(show=args.show)
 else:
-    catalog.draw_all(show=args.show)
+    catalog.draw_all(args.gpus, show=args.show)

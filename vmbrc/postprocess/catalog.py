@@ -28,14 +28,14 @@ class Catalog(list):
             figure = figure()
         self.append(figure)
 
-    def draw_all(self, show=True):
+    def draw_all(self, gpus, show=True):
         for figure in self:
-            figure.generate()
+            figure.generate(gpus)
             figure.save(show=show)
 
     def regenerate(self, idx, gpus):
         figure = self[idx]
-        metadata = figure.Metadata()
+        metadata = figure.Metadata(gpus)
         metadata.generate(gpus)
 
     def regenerate_all(self, gpus):
@@ -60,11 +60,11 @@ class Metadata(File):
     def filepath(self):
         return join(Catalog.dir, self.filename)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, gpus, *args, **kwargs):
         is_not_generated = not exists(self.filepath)
         super().__init__(self.filepath, 'a', *args, **kwargs)
         if is_not_generated:
-            self.generate()
+            self.generate(gpus)
 
     def generate(self, gpus):
         raise NotImplementedError
@@ -93,8 +93,8 @@ class Figure(Figure):
     def filepath(self):
         return join(Catalog.dir, self.filename)
 
-    def generate(self):
-        with self.Metadata() as data:
+    def generate(self, gpus):
+        with self.Metadata(gpus) as data:
             self.plot(data)
 
     def save(self, show=True):
