@@ -78,7 +78,10 @@ class Metadata(File):
 
     def __getitem__(self, key):
         value = super().__getitem__(key)
-        return value[:]
+        try:
+            return value[:]
+        except ValueError:
+            return value[()]
 
 
 class Figure(Figure):
