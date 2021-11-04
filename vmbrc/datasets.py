@@ -409,20 +409,25 @@ class Vrms(Vrms):
         one_hot, weight = one_hot[..., None], weight[..., None]
         return one_hot, weight
 
-    def postprocess(self, prob):
-        prob = prob[..., 0]
-        bins = np.linspace(0, 1, self.bins+1)
-        bins = np.mean([bins[:-1], bins[1:]], axis=0)
-        v = np.zeros_like(prob)
-        v[:] = bins[None, None]
-        max_ = bins[np.argmax(prob, axis=-1)]
-        mean = np.average(v, weights=prob, axis=-1)
-        var = np.average((v-mean[..., None])**2, weights=prob, axis=-1)
-        std = np.sqrt(var)
+    def postprocess(self, output):
+        output = output[..., 0]
+        if output.shape[2] > 1:
+            prob = output
+            bins = np.linspace(0, 1, self.bins+1)
+            bins = np.mean([bins[:-1], bins[1:]], axis=0)
+            v = np.zeros_like(prob)
+            v[:] = bins[None, None]
+            max_ = bins[np.argmax(prob, axis=-1)]
+            mean = np.average(v, weights=prob, axis=-1)
+            var = np.average((v-mean[..., None])**2, weights=prob, axis=-1)
+            std = np.sqrt(var)
 
-        vmin, vmax = self.model.properties["vp"]
-        max_ = max_*(vmax-vmin) + vmin
-        std = std * (vmax-vmin)
+            vmin, vmax = self.model.properties["vp"]
+            max_ = max_*(vmax-vmin) + vmin
+            std = std * (vmax-vmin)
+        else:
+            max_ = output[..., 0]
+            std = 0
         return max_, std
 
 
