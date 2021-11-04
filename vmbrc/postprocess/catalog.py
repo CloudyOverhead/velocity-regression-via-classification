@@ -82,6 +82,8 @@ class Metadata(File):
             return value[:]
         except ValueError:
             return value[()]
+        except AttributeError:
+            return {item: self[key+'/'+item] for item in value.keys()}
 
 
 class Figure(Figure):
