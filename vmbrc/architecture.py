@@ -12,9 +12,7 @@ from tensorflow.keras.layers import (
     Conv3D, Conv3DTranspose, Conv2D, Bidirectional, LSTM, Permute, Input, ReLU,
     Dropout,
 )
-from tensorflow.keras.losses import (
-    categorical_crossentropy, binary_crossentropy,
-)
+from tensorflow.keras.losses import categorical_crossentropy
 from tensorflow.keras.backend import reshape
 from tensorflow.python.ops.math_ops import _bucketize as digitize
 from GeoFlow.DefinedNN.RCNN2D import RCNN2D, Hyperparameters, build_rcnn
