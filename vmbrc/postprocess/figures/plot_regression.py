@@ -182,12 +182,13 @@ class Models(Figure):
                 [4, 8, 12],
                 [5, 9, 13],
             ],
-            ref=3,
-            # figsize=[7.66, 7.66],
+            ref=2,
+            figsize=[7.6, 9],
             sharey=True,
             sharex=True,
             spanx=True,
         )
+        axs.format(abc='(a)', abcloc='l')
 
         iter_axs = iter(axs)
         for col, col_meta in zip(cols, cols_meta):
@@ -212,6 +213,24 @@ class Models(Figure):
                     axs=input_axs,
                     vmax=vmax_,
                 )
+
+
+        axs.format(title="", ylabel="$t$ (s)", xlabel="$x$ (km)")
+        axs[0].format(title="CMP gather")
+        axs[0].format(xlabel="$h$ (km)")
+        axs[5].format(ylabel="$z$ (km)")
+
+        axs[1:].format(
+            rowlabels=[
+                "Primaries",
+                "$v_\\mathrm{RMS}(t, x)$",
+                "$v_\\mathrm{int}(t, x)$",
+                "$v_\\mathrm{int}(z, x)$",
+            ]
+        )
+        axs[1].format(title="Pretraining")
+        axs[5].format(title="End estimate")
+        axs[9].format(title="Ground truth")
 
 
 def combine_predictions(dataset, logdir, savedir):
