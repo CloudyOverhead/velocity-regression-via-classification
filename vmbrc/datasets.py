@@ -396,22 +396,8 @@ class Vrms(Vrms):
                 im.set_alpha(alpha)
         return ims
 
-    def preprocess(self, label, weight):
-        label, weight = super().preprocess(label, weight)
-        bins = np.linspace(0, 1, self.bins+1)
-        label = np.digitize(label, bins) - 1
-        one_hot = np.zeros([*label.shape, self.bins])
-        i, j = np.meshgrid(
-            *[np.arange(s) for s in label.shape], indexing='ij',
-        )
-        one_hot[i, j, label] = 1
-        weight = np.repeat(weight[..., None], self.bins, axis=-1)
-        one_hot, weight = one_hot[..., None], weight[..., None]
-        return one_hot, weight
-
     def postprocess(self, output):
-        output = output[..., 0]
-        if output.shape[2] > 1:
+        if output.ndim > 2 and output.shape[2] > 1:
             prob = output
             bins = np.linspace(0, 1, self.bins+1)
             bins = np.mean([bins[:-1], bins[1:]], axis=0)
@@ -426,8 +412,10 @@ class Vrms(Vrms):
             max_ = max_*(vmax-vmin) + vmin
             std = std * (vmax-vmin)
         else:
-            max_ = output[..., 0]
-            std = 0
+            max_ = output
+            while max_.ndim < 2:
+                max_ = max_[..., 0]
+            std = np.zeros_like(max_)
         return max_, std
 
 
@@ -444,6 +432,8 @@ class ShotGather(ShotGather):
         self, data, weights=None, axs=None, cmap='Greys', vmin=0, vmax=None,
         clip=.08, ims=None,
     ):
+        if data.shape[2] == 1:
+            weights = np.repeat(weights, data.shape[1], axis=1)
         return super().plot(data, weights, axs, cmap, vmin, vmax, clip, ims)
 
 
