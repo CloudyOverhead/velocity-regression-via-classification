@@ -192,7 +192,9 @@ class Models(Figure):
 
         iter_axs = iter(axs)
         for col, col_meta in zip(cols, cols_meta):
-            for row_name in col:
+            for row_name in ['shotgather', 'ref', 'vrms', 'vint', 'vdepth']:
+                if row_name not in col.keys():
+                    continue
                 input_axs = [next(iter_axs)]
                 im_data = col[row_name]
                 try:
