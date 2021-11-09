@@ -106,12 +106,21 @@ class CompoundMetadata(dict):
 
     def __getitem__(self, key):
         name, *key = key.split('/')
-        child = self[name]
+        child = super().__getitem__(name)
         if key:
             key = '/'.join(key)
             return child[key]
         else:
             return child
+
+    def __enter__(self):
+        for child in self.values():
+            child.__enter__()
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        for child in self.values():
+            child.__exit__(*args, **kwargs)
 
     def generate(self, gpus):
         for child in self.values():
