@@ -147,6 +147,37 @@ class RCNN2DRegressor(RCNN2D):
 
         return losses, losses_weights
 
+    def launch_testing(self, tfdataset: tf.data.Dataset, savedir: str = None):
+        if savedir is None:
+            # Save the predictions to a subfolder that has the name of the
+            # network.
+            savedir = self.name
+        savedir = join(self.dataset.datatest, savedir)
+        if not isdir(savedir):
+            mkdir(savedir)
+        if self.dataset.testsize % self.params.batch_size != 0:
+            raise ValueError(
+                "Your batch size must be a divisor of your dataset length."
+            )
+
+        for data, _ in tfdataset:
+            evaluated = self.predict(
+                data,
+                batch_size=self.params.batch_size,
+                max_queue_size=10,
+                use_multiprocessing=False,
+            )
+
+            for i, example in enumerate(data["filename"]):
+                example_evaluated = {
+                    lbl: out[i] for lbl, out in evaluated.items()
+                }
+                example = example[0]
+                exampleid = int(example.split("_")[-1])
+                self.dataset.generator.write_predictions(
+                    exampleid, savedir, example_evaluated,
+                )
+
 
 class RCNN2DClassifier(RCNN2DRegressor):
     toinputs = ["shotgather"]
