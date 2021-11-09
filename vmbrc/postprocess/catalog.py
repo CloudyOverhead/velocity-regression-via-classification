@@ -1,5 +1,6 @@
 from os import listdir, remove
 from os.path import join, exists, split
+from copy import copy
 
 from matplotlib.figure import Figure
 from matplotlib import pyplot as plt
