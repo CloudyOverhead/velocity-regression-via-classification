@@ -21,6 +21,7 @@ class Predictions(Metadata):
     @classmethod
     def construct(cls, nn, params, logdir, savedir, dataset):
         cls = copy(cls)
+        cls.__name__ = cls.__name__ + '_' + nn.__name__
         cls.nn = nn
         cls.params = params
         cls.logdir = logdir
