@@ -86,6 +86,37 @@ class Metadata(File):
             return {item: self[key+'/'+item] for item in value.keys()}
 
 
+class CompoundMetadata(dict):
+    @classmethod
+    def combine(cls, *others):
+        cls = copy(cls)
+        cls._children = {}
+        for child in others:
+            if issubclass(child, CompoundMetadata):
+                cls._children.update(child._children)
+            else:
+                cls._children[child.__name__] = child
+        return cls
+
+    def __init__(self, gpus):
+        super().__init__(self)
+        for key, child in self._children.items():
+            self[key] = child(gpus)
+
+    def __getitem__(self, key):
+        name, *key = key.split('/')
+        child = self[name]
+        if key:
+            key = '/'.join(key)
+            return child[key]
+        else:
+            return child
+
+    def generate(self, gpus):
+        for child in self.values():
+            child.generate(gpus)
+
+
 class Figure(Figure):
     Metadata = Metadata
 
