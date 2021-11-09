@@ -25,6 +25,8 @@ class Predictions(Metadata):
         cls.nn = nn
         cls.params = params
         cls.logdir = logdir
+        if savedir is None:
+            savedir = nn.__name__
         cls.savedir = savedir
         cls.dataset = dataset
         return cls
