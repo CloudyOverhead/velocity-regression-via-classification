@@ -2,7 +2,6 @@
 
 from os import listdir, makedirs
 from os.path import join, exists, split
-from copy import copy
 from datetime import datetime
 from argparse import Namespace
 
@@ -20,8 +19,8 @@ class Predictions(Metadata):
 
     @classmethod
     def construct(cls, nn, params, logdir, savedir, dataset):
-        cls = copy(cls)
-        cls.__name__ = cls.__name__ + '_' + nn.__name__
+        name = cls.__name__ + '_' + nn.__name__
+        cls = type(name, cls.__bases__, dict(cls.__dict__))
         cls.nn = nn
         cls.params = params
         cls.logdir = logdir
