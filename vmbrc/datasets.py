@@ -410,15 +410,14 @@ class Vrms(Vrms):
             mean = np.average(v, weights=prob, axis=-1)
             var = np.average((v-mean[..., None])**2, weights=prob, axis=-1)
             std = np.sqrt(var)
-
-            vmin, vmax = self.model.properties["vp"]
-            max_ = max_*(vmax-vmin) + vmin
-            std = std * (vmax-vmin)
         else:
             max_ = output
             while max_.ndim < 2:
                 max_ = max_[..., 0]
             std = np.zeros_like(max_)
+        vmin, vmax = self.model.properties["vp"]
+        max_ = max_*(vmax-vmin) + vmin
+        std = std * (vmax-vmin)
         return max_, std
 
 
