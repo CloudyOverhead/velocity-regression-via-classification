@@ -6,8 +6,10 @@ import numpy as np
 import proplot as pplt
 
 from vmbrc.datasets import Article1D
-from vmbrc.architecture import RCNN2DRegressor, Hyperparameters1D
-from ..catalog import catalog, Figure
+from vmbrc.architecture import (
+    RCNN2DRegressor, RCNN2DClassifier, Hyperparameters1D,
+)
+from ..catalog import catalog, Figure, CompoundMetadata
 from .predictions import Predictions
 
 TOINPUTS = ['shotgather']
@@ -17,40 +19,56 @@ TOOUTPUTS = ['ref', 'vrms', 'vint', 'vdepth']
 class Models(Figure):
     params = Hyperparameters1D(is_training=False)
     params.batch_size = 2
-    Metadata = Predictions.construct(
-        RCNN2DRegressor,
-        params,
-        join('logs', 'regressor'),
-        None,
-        Article1D(params),
+    Metadata = CompoundMetadata.combine(
+        Predictions.construct(
+            RCNN2DRegressor,
+            params,
+            join('logs', 'regressor'),
+            None,
+            Article1D(params),
+        ),
+        Predictions.construct(
+            RCNN2DClassifier,
+            params,
+            join('logs', 'classifier'),
+            None,
+            Article1D(params),
+        ),
     )
 
     def plot(self, data):
-        dataset = self.Metadata.dataset
+        regression = data['Predictions_RCNN2DRegressor']
+        classification = data['Predictions_RCNN2DClassifier']
+        r_meta = self.Metadata._children['Predictions_RCNN2DRegressor']
+        c_meta = self.Metadata._children['Predictions_RCNN2DClassifier']
+        dataset = r_meta.dataset
+        c_dataset = c_meta.dataset
 
-        inputs_meta = {input: dataset.inputs[input] for input in TOINPUTS}
-        outputs_meta = {output: dataset.outputs[output] for output in TOOUTPUTS}
-        cols_meta = [inputs_meta, outputs_meta, outputs_meta, outputs_meta]
+        in_meta = {input: dataset.inputs[input] for input in TOINPUTS}
+        out_meta = {output: dataset.outputs[output] for output in TOOUTPUTS}
+        c_out_meta = {output: c_dataset.outputs[output] for output in TOOUTPUTS}
+        cols_meta = [in_meta, out_meta, c_out_meta, out_meta]
 
-        ref = data['labels/ref']
+        ref = regression['labels/ref']
         crop_top = int(np.nonzero(ref.astype(bool).any(axis=1))[0][0] * .95)
         dh = dataset.model.dh
         dt = dataset.acquire.dt * dataset.acquire.resampling
         vmin, vmax = dataset.model.properties['vp']
         diff = vmax - vmin
-        water_v = float(data['labels/vint'][0, 0])*diff + vmin
+        water_v = float(regression['labels/vint'][0, 0])*diff + vmin
         tdelay = dataset.acquire.tdelay
         crop_top_depth = int((crop_top-tdelay/dt)*dt/2*water_v/dh)
-        mask = data['weights/vdepth']
+        mask = regression['weights/vdepth']
         crop_bottom_depth = np.nonzero((~mask.astype(bool)).all(axis=1))[0][0]
         crop_bottom_depth = int(crop_bottom_depth)
         cols = [
-            data[col] for col in ['inputs', 'pretrained', 'preds', 'labels']
+            regression['inputs'],
+            regression['preds'],
+            classification['preds'],
+            regression['labels'],
         ]
-        weights = data['weights']
-        pretrained_std = data['pretrained_std']
-        preds_std = data['preds_std']
-        for col in [*cols, weights, pretrained_std, preds_std]:
+        weights = regression['weights']
+        for col in [*cols, weights, regression['std'], classification['std']]:
             for row_name, row in col.items():
                 if row_name != 'vdepth':
                     col[row_name] = row[crop_top:]
@@ -59,11 +77,11 @@ class Models(Figure):
 
         tdelay = dataset.acquire.tdelay
         start_time = crop_top*dt - tdelay
-        time = np.arange(len(data['labels/ref']))*dt + start_time
+        time = np.arange(len(regression['labels/ref']))*dt + start_time
         dh = dataset.model.dh
         src_rec_depth = dataset.acquire.source_depth
         start_depth = crop_top_depth*dh + src_rec_depth
-        depth = np.arange(len(data['labels/vdepth']))*dh + start_depth
+        depth = np.arange(len(regression['labels/vdepth']))*dh + start_depth
 
         src_pos, rec_pos = dataset.acquire.set_rec_src()
         depth /= 1000
@@ -124,8 +142,8 @@ class Models(Figure):
                 "$v_\\mathrm{int}(z, x)$",
             ]
         )
-        axs[1].format(title="Pretraining")
-        axs[5].format(title="End estimate")
+        axs[1].format(title="Regressor")
+        axs[5].format(title="Classifier")
         axs[9].format(title="Ground truth")
 
 
