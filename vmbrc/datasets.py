@@ -398,6 +398,9 @@ class Vrms(Vrms):
 
     def postprocess(self, output):
         if output.ndim > 2 and output.shape[2] > 1:
+            while output.ndim > 3:
+                assert output.shape[-1] == 1
+                output = output[..., 0]
             prob = output
             bins = np.linspace(0, 1, self.bins+1)
             bins = np.mean([bins[:-1], bins[1:]], axis=0)
