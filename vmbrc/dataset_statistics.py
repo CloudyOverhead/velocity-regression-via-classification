@@ -20,25 +20,27 @@ def main(args=None):
     for example in dataset.files[PHASE]:
         _, current_labels, _, _ = dataset.get_example(example)
         for name, label in current_labels.items():
-            if name != 'vdepth':
+            if name not in ['vdepth', 'vrms']:
                 continue
             try:
                 labels[name] = np.append(labels[name], label[None], axis=0)
             except KeyError:
                 labels[name] = label[None]
 
-    mean = np.mean(labels['vdepth'], axis=0)
-    std = np.std(labels['vdepth'], axis=0)
-    while mean.ndim > 1:
-        mean = mean[..., 0]
-    while std.ndim > 1:
-        std = std[..., 0]
-    fig, axs = pplt.subplots(nrows=1, ncols=1)
-    axs.plot(mean, range(len(mean)))
-    axs.fill_betweenx(range(len(mean)), mean-std, mean+std, alpha=.2)
-    axs.format(yreverse=True)
-    plt.savefig('velocity_vs_depth')
-    pplt.show()
+    velocities = [labels['vdepth'], labels['vrms']]
+    titles = ['velocity_vs_depth', 'rms_velocity_vs_time']
+    for v, title in zip(velocities, titles):
+        v = v*2700+1300
+        while v.ndim > 2:
+            v = v[..., 0]
+        depth = np.arange(v.shape[-1])
+        depth = np.repeat(depth[None], v.shape[0], axis=0)
+
+        fig, axs = pplt.subplots(nrows=1, ncols=1)
+        axs.hist2d(v.flatten(), depth.flatten(), [100, 100], density=True)
+        axs.format(yreverse=True)
+        plt.savefig(title)
+        pplt.show()
 
 
 def parse_args():
