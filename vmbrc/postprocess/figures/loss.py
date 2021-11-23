@@ -65,7 +65,7 @@ class Loss(Figure):
     params = Hyperparameters1D(is_training=True)
 
     def plot(self, data):
-        _, ax = pplt.subplots(1, figsize=[6.66, 2.5])
+        _, ax = pplt.subplots(1, figsize=[6.66, 5])
         epochs = self.params.epochs
         steps_per_epoch = self.params.steps_per_epoch
         LABEL_NAMES = {
