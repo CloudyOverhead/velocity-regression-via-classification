@@ -441,10 +441,15 @@ class Hyperparameters2D(Hyperparameters1D):
 
 
 def stochastic_v_loss(decode_bins):
+    bins = list(np.linspace(0, 1, decode_bins+1))
+
     def loss(label, output):
         label, weight = label[:, 0], label[:, 1, ..., 0]
-        output = output[..., 0]
-        loss = categorical_crossentropy(label, output)
+        label = digitize(label, bins) - 1
+        one_hot = tf.one_hot(label, decode_bins)
+        weight = tf.repeat(weight[..., None], decode_bins, axis=-1)
+
+        loss = categorical_crossentropy(one_hot, output)
         loss *= weight
         loss = tf.reduce_mean(loss, axis=[1, 2])
         return loss
