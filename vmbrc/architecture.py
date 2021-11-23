@@ -180,9 +180,6 @@ class RCNN2DRegressor(RCNN2D):
 
 
 class RCNN2DClassifier(RCNN2DRegressor):
-    toinputs = ["shotgather"]
-    tooutputs = ["ref", "vrms", "vint", "vdepth"]
-
     def build_network(self, inputs):
         super().build_network(inputs)
         params = self.params
@@ -399,7 +396,7 @@ class Hyperparameters1D(Hyperparameters):
         super().__init__()
 
         self.steps_per_epoch = 100
-        self.batch_size = 2
+        self.batch_size = 4
 
         self.learning_rate = 8E-4
 
