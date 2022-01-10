@@ -143,6 +143,8 @@ class Article1D(Dataset):
         model.water_dmax = 3.1 * model.water_vmax
         model.vp_min = 1300.0
         model.vp_max = 4000.0
+        model.dzmax = 1000
+        model.accept_decrease = .65
 
         acquire = Acquisition(model=model)
         acquire.dt = .0004
@@ -200,14 +202,14 @@ class Article2D(Article1D):
         acquire.singleshot = False
 
         inputs = {
-            ShotGatherCrop.name: ShotGatherCrop(model=model, acquire=acquire)
+            ShotGather.name: ShotGather(model=model, acquire=acquire)
         }
         bins = self.params.decode_bins
         outputs = {
-            ReftimeCrop.name: ReftimeCrop(model=model, acquire=acquire),
-            VrmsCrop.name: VrmsCrop(model=model, acquire=acquire, bins=bins),
-            VintCrop.name: VintCrop(model=model, acquire=acquire, bins=bins),
-            VdepthCrop.name: VdepthCrop(model=model, acquire=acquire, bins=bins),
+            Reftime.name: Reftime(model=model, acquire=acquire),
+            Vrms.name: Vrms(model=model, acquire=acquire, bins=bins),
+            Vint.name: Vint(model=model, acquire=acquire, bins=bins),
+            Vdepth.name: Vdepth(model=model, acquire=acquire, bins=bins),
         }
         for input in inputs.values():
             input.train_on_shots = False
@@ -307,15 +309,15 @@ class MarineModel(MarineModel):
     def generate_model(self, *args, seed=None, **kwargs):
         is_2d = self.dip_max > 0
         self.layer_num_min = 5
+        if seed is None:
+            seed = np.random.randint(0, 20000)
         if not is_2d:
             if seed < 5000:
-                self.layer_num_min = 5
-            elif seed < 10000:
-                self.layer_num_min = 10
-            elif seed < 15000:
-                self.layer_num_min = 30
+                self.layer_dh_max = 500
+            if seed < 10000:
+                self.layer_dh_max = 200
             else:
-                self.layer_num_min = 50
+                self.layer_dh_max = 50
         else:
             self.layer_num_min = 50
         return super().generate_model(*args, seed=seed, **kwargs)
@@ -337,8 +339,8 @@ class MarineModel(MarineModel):
             texture=self.max_texture,
             trend_min=self.vp_trend_min,
             trend_max=self.vp_trend_max,
-            dzmax=1000,
-            filter_decrease=True,
+            dzmax=self.dzmax,
+            filter_decrease=self.accept_decrease > 0,
         )
         roc = Lithology(name='roc', properties=[vp, vs, rho])
         if self.amp_max > 0 and self.max_deform_nfreq > 0:
@@ -362,7 +364,7 @@ class MarineModel(MarineModel):
             lithologies=[roc],
             ordered=False,
             deform=deform,
-            accept_decrease=.3,
+            accept_decrease=self.accept_decrease,
         )
         strati = Stratigraphy(sequences=[waterseq, rocseq])
         properties = strati.properties()
