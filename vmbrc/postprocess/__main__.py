@@ -14,7 +14,7 @@ parser.add_argument('--gpus', type=int_or_list)
 args = parser.parse_args()
 
 if args.list:
-    print(catalog)
+    print(catalog.filenames)
 else:
     if args.metadata:
         if args.figure:
