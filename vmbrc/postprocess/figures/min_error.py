@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 
-from os.path import join
-
 import numpy as np
 import proplot as pplt
 
