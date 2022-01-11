@@ -400,7 +400,7 @@ class Hyperparameters1D(Hyperparameters):
 
         self.learning_rate = 8E-4
 
-        self.decode_bins = 100
+        self.decode_bins = 128
         self.decode_tries = 16
 
         if is_training:
