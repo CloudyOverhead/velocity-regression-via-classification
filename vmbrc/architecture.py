@@ -13,7 +13,7 @@ from tensorflow.keras.layers import (
     Dropout,
 )
 from tensorflow.keras.losses import categorical_crossentropy
-from tensorflow.keras.backend import reshape
+from tensorflow.keras.backend import reshape, ndim
 from tensorflow.python.ops.math_ops import _bucketize as digitize
 from GeoFlow.DefinedNN.RCNN2D import RCNN2D, Hyperparameters, build_rcnn
 from GeoFlow.Losses import ref_loss, v_compound_loss
@@ -464,20 +464,20 @@ def make_converter_stochastic(converter, batch_size, qty_bins, tries):
     nd_categorical = partial(
         tf.random.categorical, num_samples=tries, dtype=tf.int32,
     )
-    for i in range(tf.rank(input)-2):
+    for i in range(ndim(input)-2):
         nd_categorical = partial(tf.map_fn, nd_categorical, dtype=tf.int32)
     logits = tf.math.log(input)
     v = nd_categorical(logits)
     v = tf.cast(v, tf.float32)
     v = (v+.5) / qty_bins
-    v = tf.transpose(v, [tf.rank(v)-1, *range(0, tf.rank(v)-1)])
+    v = tf.transpose(v, [ndim(v)-1, *range(0, ndim(v)-1)])
     v = tf.map_fn(converter, v)
     bins = np.linspace(0, 1, qty_bins+1, dtype=np.float32)
     bins = list(bins)
     v = digitize(v, bins)
     v = tf.cast(v, tf.int32)
     bins = tf.range(qty_bins)
-    while tf.rank(bins) != tf.rank(v):
+    while ndim(bins) != ndim(v):
         bins = bins[None]
     matches = tf.cast(v == bins, dtype=tf.float32)
     p = tf.reduce_sum(matches, axis=0, keepdims=False) / tries
