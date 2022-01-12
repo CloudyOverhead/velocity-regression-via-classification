@@ -119,3 +119,82 @@ def combine_predictions(dataset, logdir, savedir):
         dataset.generator.write_predictions(
             None, f"{filedir}_std", std, filename=filename,
         )
+
+
+class Statistics(Metadata):
+    colnames = ['similarities', 'rmses']
+
+    @classmethod
+    def construct(cls, nn, dataset, savedir):
+        name = cls.__name__ + '_' + nn.__name__
+        cls = type(name, cls.__bases__, dict(cls.__dict__))
+        cls.nn = nn
+        if savedir is None:
+            savedir = nn.__name__
+        cls.savedir = savedir
+        cls.dataset = dataset
+        return cls
+
+    def generate(self, _):
+        savedir = self.savedir
+        dataset = self.dataset
+
+        print(f"Comparing predictions for directory {savedir}.")
+        _, labels, weights, preds = read_all(dataset, savedir)
+
+        similarities = np.array([])
+        rmses = np.array([])
+        for current_labels, current_weights, current_preds in zip(
+            labels["vint"], weights["vint"], preds["vint"],
+        ):
+            current_labels *= current_weights
+            current_preds *= current_weights[..., None, None]
+            if current_labels.shape[1] != 1:
+                similarity = ssim(current_labels[..., None, None], current_preds)
+                similarities = np.append(similarities, similarity)
+            rmse = np.sqrt(np.mean((current_labels-current_preds)**2))
+            rmses = np.append(rmses, rmse)
+        vmin, vmax = dataset.model.properties['vp']
+        rmses *= vmax - vmin
+
+        metrics = [similarities, rmses]
+        for name, metric in zip(self.colnames, metrics):
+            self[name] = metric
+
+    def print_statistics(self):
+        similarities = self['similarities']
+        rmses = self['rmses']
+        print("Average SSIM:", np.mean(similarities))
+        print("Standard deviation on SSIM:", np.std(similarities))
+        print("Average RMSE:", np.mean(rmses))
+        print("Standard deviation on RMSE:", np.std(rmses))
+
+
+def read_all(dataset, savedir=None, toinputs=TOINPUTS, tooutputs=TOOUTPUTS):
+    all_inputs = {}
+    all_labels = {}
+    all_weights = {}
+    all_preds = {}
+    for example in dataset.files["test"]:
+        inputs, labels, weights, filename = dataset.get_example(
+            example,
+            phase='test',
+            toinputs=toinputs,
+            tooutputs=tooutputs,
+        )
+        if savedir is not None:
+            preds = dataset.generator.read_predictions(filename, savedir)
+        else:
+            preds = {}
+        target_dicts = [all_inputs, all_labels, all_weights, all_preds]
+        current_dicts = [inputs, labels, weights, preds]
+        for target_dict, current_dict in zip(target_dicts, current_dicts):
+            for key in current_dict.keys():
+                current_array = np.expand_dims(current_dict[key], axis=0)
+                if key in target_dict.keys():
+                    target_dict[key] = np.append(
+                        target_dict[key], current_array, axis=0,
+                    )
+                else:
+                    target_dict[key] = current_array
+    return all_inputs, all_labels, all_weights, all_preds
