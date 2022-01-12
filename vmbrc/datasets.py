@@ -436,36 +436,6 @@ class ShotGather(ShotGather):
         self, data, weights=None, axs=None, cmap='Greys', vmin=0, vmax=None,
         clip=.08, ims=None,
     ):
-        if data.shape[2] == 1:
+        if data.shape[2] == 1 and weights is not None:
             weights = np.repeat(weights, data.shape[1], axis=1)
         return super().plot(data, weights, axs, cmap, vmin, vmax, clip, ims)
-
-
-class ReftimeCrop(Reftime):
-    def preprocess(self, label, weight):
-        label, weight = super().preprocess(label, weight)
-        return label[:, 10:-10], weight[:, 10:-10]
-
-
-class VrmsCrop(Vrms):
-    def preprocess(self, label, weight):
-        label, weight = super().preprocess(label, weight)
-        return label[:, 10:-10], weight[:, 10:-10]
-
-
-class VintCrop(Vint):
-    def preprocess(self, label, weight):
-        label, weight = super().preprocess(label, weight)
-        return label[:, 10:-10], weight[:, 10:-10]
-
-
-class VdepthCrop(Vdepth):
-    def preprocess(self, label, weight):
-        label, weight = super().preprocess(label, weight)
-        return label[:, 10:-10], weight[:, 10:-10]
-
-
-class ShotGatherCrop(ShotGather):
-    def preprocess(self, data, label):
-        data = super().preprocess(data, label)
-        return data[:, :, 10:-10]
