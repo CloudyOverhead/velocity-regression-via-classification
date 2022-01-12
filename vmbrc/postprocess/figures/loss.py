@@ -31,33 +31,38 @@ class Loss_(Metadata):
 
     def generate(self, gpus):
         for nn, logdir in self.logdirs.items():
-            mean, std = self.load_events(logdir)
+            sublogdirs = listdir(logdir)
+            sublogdirs = [join(logdir, sublogdir) for sublogdir in sublogdirs]
+            mean, std = self.load_events(sublogdirs)
             for item, value in zip(['mean', 'std'], [mean, std]):
                 key = nn + '/' + item
                 self[key] = value
 
-    def load_events(self, logdir):
+    def load_all_events(self, logdirs):
         data = []
-        for i in listdir(logdir):
-            current_logdir = join(logdir, i)
-            events_path = [
-                path for path in listdir(current_logdir) if "events" in path
-            ]
-            assert len(events_path) == 1
-            events_path = join(current_logdir, events_path[0])
-            current_data = pd.DataFrame([])
-            events = summary_iterator(events_path)
-            for event in events:
-                if hasattr(event, 'step'):
-                    step = event.step
-                    for value in event.summary.value:
-                        column = value.tag
-                        value = value.simple_value
-                        current_data.loc[step, column] = np.log10(value)
+        for logdir in logdirs:
+            current_data = self.load_events(logdir)
             data.append(current_data)
         data = pd.concat(data)
         by_index = data.groupby(data.index)
         return by_index.mean(), by_index.std()
+
+    def load_events(self, logdir):
+        events_paths = [
+            path for path in listdir(logdir) if "events" in path
+        ]
+        assert len(events_paths) >= 1
+        events_path = join(logdir, events_paths[-1])
+        current_data = pd.DataFrame([])
+        events = summary_iterator(events_path)
+        for event in events:
+            if hasattr(event, 'step'):
+                step = event.step
+                for value in event.summary.value:
+                    column = value.tag
+                    value = value.simple_value
+                    current_data.loc[step, column] = np.log10(value)
+        return current_data
 
 
 class Loss(Figure):
