@@ -82,7 +82,7 @@ class Eval(Figure):
     @classmethod
     def construct(cls, nn, params, logdir, savedir, dataset):
         cls = type(cls.__name__, cls.__bases__, dict(cls.__dict__))
-        cls.params = params
+        cls.params = params(is_training=True)
         cls.nn = nn
         if savedir is None:
             savedir = nn.__name__
@@ -91,7 +91,7 @@ class Eval(Figure):
         cls.Metadata = CompoundMetadata.combine(
             Predictions.construct(
                 nn=nn,
-                params=params,
+                params=params(is_training=False),
                 logdir=logdir,
                 savedir=savedir,
                 dataset=dataset,
@@ -285,7 +285,6 @@ if __name__ == '__main__':
 
     args.nn = getattr(architecture, args.nn)
     args.params = getattr(architecture, args.params)
-    args.params = args.params(is_training=True)
     for arg, value in zip(unknown_args[::2], unknown_args[1::2]):
         arg = arg.strip('-')
         if arg in args.params.__dict__.keys():
@@ -294,7 +293,7 @@ if __name__ == '__main__':
             raise ValueError(f"Argument `{arg}` not recognized. Could not "
                              f"match it with an existing hyperparameter.")
     args.dataset = getattr(datasets, args.dataset)
-    args.dataset = args.dataset(args.params)
+    args.dataset = args.dataset(args.params(is_training=False))
 
     Eval = Eval.construct(
         nn=args.nn,
