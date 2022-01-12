@@ -304,7 +304,7 @@ if __name__ == '__main__':
         dataset=args.dataset,
     )
 
-    # Eval.Metadata(args.gpus).generate(args.gpus)
+    Eval.Metadata(args.gpus).generate(args.gpus)
     figure = Eval()
     figure.generate(args.gpus)
     figure.save()
