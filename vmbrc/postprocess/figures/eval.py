@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from os import listdir
-from os.path import join
+from os.path import join, exists
 from argparse import ArgumentParser
 
 import numpy as np
@@ -24,12 +24,6 @@ TABLEAU_COLORS = list(TABLEAU_COLORS)
 
 
 class Loss(Loss_):
-    columns = [
-        'loss', 'ref_loss', 'vdepth_loss', 'vint_loss', 'vrms_loss',
-        'time_this_iter_s', 'should_checkpoint', 'done', 'time_since_restore',
-        'timesteps_since_restore', 'iterations_since_restore',
-    ]
-
     @classmethod
     def construct(cls, logdir):
         cls = type(cls.__name__, cls.__bases__, dict(cls.__dict__))
@@ -37,18 +31,15 @@ class Loss(Loss_):
         return cls
 
     def generate(self, gpus):
-        events_path = [
-            path for path in listdir(self.logdir) if "events" in path
-        ]
-        if len(events_path) >= 1:
+        if exists(join(self.logdir, 'progress.csv')):
             logdirs = [self.logdir]
         else:
             logdirs = [
                 join(self.logdir, subdir) for subdir in listdir(self.logdir)
             ]
         losses, stds = self.load_all_events(logdirs)
-        self['losses'] = losses
-        self['stds'] = stds
+        self['losses'] = losses.values
+        self['stds'] = stds.values
 
 
 class Errors(Statistics):

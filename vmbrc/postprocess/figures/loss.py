@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from os import listdir
-from os.path import join
+from os.path import join, exists
 
 import numpy as np
 import pandas as pd
@@ -10,7 +10,6 @@ from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.colors import TABLEAU_COLORS
 from matplotlib.legend_handler import HandlerTuple
-from tensorflow.compat.v1.train import summary_iterator
 
 from vmbrc.architecture import Hyperparameters1D
 from ..catalog import catalog, Figure, Metadata
@@ -23,11 +22,7 @@ class Loss_(Metadata):
         'regressor': join('logs', 'regressor'),
         'classifier': join('logs', 'classifier'),
     }
-    columns = [
-        'loss', 'ref_loss', 'vdepth_loss', 'vint_loss', 'vrms_loss',
-        'time_this_iter_s', 'should_checkpoint', 'done', 'time_since_restore',
-        'timesteps_since_restore', 'iterations_since_restore',
-    ]
+    columns = ['loss', 'ref_loss', 'vdepth_loss', 'vint_loss', 'vrms_loss']
 
     def generate(self, gpus):
         for nn, logdir in self.logdirs.items():
@@ -44,25 +39,14 @@ class Loss_(Metadata):
             current_data = self.load_events(logdir)
             data.append(current_data)
         data = pd.concat(data)
+        data = data[self.columns]
         by_index = data.groupby(data.index)
         return by_index.mean(), by_index.std()
 
     def load_events(self, logdir):
-        events_paths = [
-            path for path in listdir(logdir) if "events" in path
-        ]
-        assert len(events_paths) >= 1
-        events_path = join(logdir, events_paths[-1])
-        current_data = pd.DataFrame([])
-        events = summary_iterator(events_path)
-        for event in events:
-            if hasattr(event, 'step'):
-                step = event.step
-                for value in event.summary.value:
-                    column = value.tag
-                    value = value.simple_value
-                    current_data.loc[step, column] = np.log10(value)
-        return current_data
+        events_path = join(logdir, 'progress.csv')
+        assert exists(events_path)
+        return pd.read_csv(events_path)
 
 
 class Loss(Figure):
