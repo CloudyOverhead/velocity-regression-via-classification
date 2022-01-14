@@ -111,6 +111,7 @@ class Eval(Figure):
             ncols=3, nrows=2, figsize=[9, 6], sharex=False, sharey=False,
         )
         metadata = data[f'Predictions_{name}']
+        input_meta = self.dataset.inputs['shotgather']
         output_meta = self.dataset.outputs['vint']
 
         suptitle = " ― ".join(
@@ -122,24 +123,53 @@ class Eval(Figure):
             ]
         )
         plt.suptitle(suptitle)
-        self.imshow_example(
-            axs[0], output_meta, metadata['labels']['vint'], title="Label",
-        )
-        self.imshow_example(
-            axs[1], output_meta, metadata['preds']['vint'], title="Estimation",
-        )
+        input = metadata['inputs']['shotgather']
+        label = metadata['labels']['vint']
+        pred = metadata['preds']['vint']
+        is_1d = label.shape[1] == 1
+        dt = self.dataset.acquire.dt * self.dataset.acquire.resampling
+
+        if is_1d:
+            self.imshow_data(axs[0], input_meta, input, dt=dt)
+            self.imshow_example(
+                axs[1], output_meta, label, dt=dt, label="Label",
+            )
+            self.imshow_example(
+                axs[1], output_meta, pred, dt=dt, label="Estimation",
+            )
+        else:
+            self.imshow_example(
+                axs[0], output_meta, label, dt=dt, title="Label",
+            )
+            self.imshow_example(
+                axs[1], output_meta, pred, dt=dt, title="Estimation",
+            )
         self.hist_errors(axs[2], data[f'Statistics_{name}/rmses'])
         self.plot_loss(axs[3], data['Loss/losses'])
         self.density_errors_vs_target(axs[4], data[f'Errors_{name}/errors'])
         self.density_errors_vs_depth(axs[5], data[f'Errors_{name}/errors'])
 
-    def imshow_example(self, ax, output_meta, data, title=""):
+    def imshow_data(self, ax, input_meta, data, dt=1):
+        input_meta.plot(data[:, ::-1], axs=[ax])
+        ax.format(
+            title="",
+            xticks=[],
+            yformatter=lambda x, _: x * dt,
+        )
+
+    def imshow_example(self, ax, output_meta, data, dt=1, title="", label=""):
         data, _ = output_meta.postprocess(data)
-        output_meta.plot([data, None], weights=np.ones_like(data), axs=[ax])
+        weights = np.ones_like(data)
+        im = output_meta.plot([data, None], weights=weights, axs=[ax])
+        if isinstance(im, list):
+            im = im[0]
+        if label:
+            im.set_label(label)
+            ax.legend()
         ax.format(
             title=title,
             xticks=[],
-            yticks=[],
+            yformatter=lambda x, _: x * dt,
         )
 
     def hist_errors(self, ax, data):
