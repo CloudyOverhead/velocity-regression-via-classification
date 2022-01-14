@@ -21,18 +21,18 @@ class Models(Figure):
     params.batch_size = 2
     Metadata = CompoundMetadata.combine(
         Predictions.construct(
-            RCNN2DRegressor,
-            params,
-            join('logs', 'regressor'),
-            None,
-            Article1D(params),
+            nn=RCNN2DRegressor,
+            params=params,
+            logdir=join('logs', 'regressor'),
+            savedir=None,
+            dataset=Article1D(params),
         ),
         Predictions.construct(
-            RCNN2DClassifier,
-            params,
-            join('logs', 'classifier'),
-            None,
-            Article1D(params),
+            nn=RCNN2DClassifier,
+            params=params,
+            logdir=join('logs', 'classifier'),
+            savedir=None,
+            dataset=Article1D(params),
         ),
     )
 

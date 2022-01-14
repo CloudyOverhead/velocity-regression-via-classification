@@ -71,7 +71,7 @@ class Errors(Statistics):
 
 class Eval(Figure):
     @classmethod
-    def construct(cls, nn, params, logdir, savedir, dataset):
+    def construct(cls, *, nn, params, logdir, savedir, dataset):
         cls = type(cls.__name__, cls.__bases__, dict(cls.__dict__))
         cls.params = params(is_training=True)
         cls.nn = nn

@@ -18,7 +18,7 @@ class Predictions(Metadata):
     colnames = ['inputs', 'preds', 'std', 'labels', 'weights']
 
     @classmethod
-    def construct(cls, nn, params, logdir, savedir, dataset):
+    def construct(cls, *, nn, params, logdir, savedir, dataset):
         name = cls.__name__ + '_' + nn.__name__
         cls = type(name, cls.__bases__, dict(cls.__dict__))
         cls.nn = nn
