@@ -10,7 +10,7 @@ import tensorflow as tf
 from tensorflow.keras import Model, Sequential
 from tensorflow.keras.layers import (
     Conv3D, Conv3DTranspose, Conv2D, Bidirectional, LSTM, Permute, Input, ReLU,
-    Dropout,
+    Dropout, Lambda,
 )
 from tensorflow.keras.losses import categorical_crossentropy
 from tensorflow.keras.backend import reshape, ndim
@@ -467,18 +467,27 @@ def make_converter_stochastic(converter, batch_size, qty_bins, tries):
     for i in range(ndim(input)-2):
         nd_categorical = partial(tf.map_fn, nd_categorical, dtype=tf.int32)
     logits = tf.math.log(input)
-    v = nd_categorical(logits)
+    try:
+        v = nd_categorical(logits)
+    except TypeError:
+        v = Lambda(nd_categorical)(logits)
     v = tf.cast(v, tf.float32)
     v = (v+.5) / qty_bins
     v = tf.transpose(v, [ndim(v)-1, *range(0, ndim(v)-1)])
-    v = tf.map_fn(converter, v)
+    try:
+        v = tf.map_fn(converter, v)
+    except TypeError:
+        v = Lambda(lambda v: tf.map_fn(converter, v))(v)
     bins = np.linspace(0, 1, qty_bins+1, dtype=np.float32)
     bins = list(bins)
-    v = digitize(v, bins)
+    try:
+        v = digitize(v, bins)
+    except TypeError:
+        v = Lambda(lambda v: digitize(v, bins))(v)
     v = tf.cast(v, tf.int32)
-    bins = tf.range(qty_bins)
-    while ndim(bins) != ndim(v):
-        bins = bins[None]
-    matches = tf.cast(v == bins, dtype=tf.float32)
+    bins_idx = tf.range(qty_bins)
+    while ndim(bins_idx) != ndim(v):
+        bins_idx = bins_idx[None]
+    matches = tf.cast(v == bins_idx, dtype=tf.float32)
     p = tf.reduce_sum(matches, axis=0, keepdims=False) / tries
     return Model(inputs=input, outputs=p, name=f"stochastic_{converter.name}")
