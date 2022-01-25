@@ -2,7 +2,7 @@
 
 from os import mkdir
 from os.path import join, abspath, isdir
-from functools import partial
+from functools import partial as _partial, update_wrapper
 from copy import deepcopy
 
 import numpy as np
@@ -20,6 +20,12 @@ from GeoFlow.Losses import ref_loss, v_compound_loss
 from GeoFlow.SeismicUtilities import (
     build_vint_to_vrms_converter, build_time_to_depth_converter,
 )
+
+
+def partial(f, *args, **kwargs):
+    partial_f = _partial(f, *args, **kwargs)
+    update_wrapper(partial_f, f)
+    return partial_f
 
 
 class RCNN2DRegressor(RCNN2D):
