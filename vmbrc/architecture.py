@@ -397,6 +397,18 @@ class RCNN2DUnpackReal(RCNN2DClassifier):
         return predictions
 
 
+class Hyperparameters(Hyperparameters):
+    @classmethod
+    def set_param(cls, name, value):
+        super_init = cls.__init__
+
+        def __init__(self, *args, **kwargs):
+            super_init(self, *args, **kwargs)
+            setattr(self, name, value)
+
+        cls.__init__ = __init__
+
+
 class Hyperparameters1D(Hyperparameters):
     def __init__(self, is_training=True):
         super().__init__()
