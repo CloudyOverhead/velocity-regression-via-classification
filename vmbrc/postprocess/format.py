@@ -3,7 +3,37 @@
 """Custom Matplotlib plot format."""
 
 from matplotlib import pyplot as plt
+from matplotlib.ticker import AutoLocator
 import proplot as pplt
+
+
+class FuncScale(pplt.FuncScale):
+    def __init__(self, *, a=1, b=0):
+        super().__init__(
+            transform=lambda x: x,
+            major_locator=FuncLocator(a=a, b=b),
+            major_formatter=lambda x, _: a*x + b,
+        )
+
+
+class FuncLocator(AutoLocator):
+    def __init__(self, a, b):
+        super().__init__()
+        self.a = a
+        self.b = b
+
+    def tick_values(self, vmin, vmax):
+        vmin += self.b / self.a
+        vmax += self.b / self.a
+        ticks = super().tick_values(vmin, vmax)
+        ticks *= self.a
+        ticks -= self.b
+        ticks /= self.a
+        return ticks
+
+
+pplt.FuncScale = FuncScale
+
 
 plt.rc('text', usetex=True)
 plt.rc('text.latex', preamble=r'\usepackage{siunitx}')
