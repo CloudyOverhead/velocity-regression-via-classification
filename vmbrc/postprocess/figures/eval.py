@@ -16,7 +16,7 @@ from vmbrc import architecture
 from vmbrc import datasets
 from vmbrc.postprocess.catalog import Figure, Metadata, CompoundMetadata
 from vmbrc.postprocess.figures.predictions import (
-    Predictions, Statistics, read_all,
+    Predictions, SelectExample, Statistics, read_all,
 )
 from vmbrc.postprocess.figures.loss import Loss_
 
@@ -50,6 +50,7 @@ class Errors(Statistics):
     def generate(self, _):
         dataset = self.dataset
         savedir = self.savedir
+        postprocess = dataset.outputs['vint'].postprocess
 
         print(f"Comparing predictions for directory {savedir}.")
         _, labels, weights, preds = read_all(dataset, savedir)
@@ -57,7 +58,8 @@ class Errors(Statistics):
         qty_timesteps = labels["vint"].shape[1]
         timesteps = np.empty_like(labels["vint"])
         timesteps[:] = np.linspace(0, 1, qty_timesteps)[None, :, None]
-        labels["vint"] = labels["vint"][..., None, None]
+        labels["vint"] = np.array([postprocess(v)[0] for v in labels["vint"]])
+        preds["vint"] = np.array([postprocess(v)[0] for v in preds["vint"]])
         errors = np.abs(labels["vint"] - preds["vint"])
         samples = [timesteps, labels["vint"], errors]
         samples = [s.flatten() for s in samples]
@@ -79,6 +81,9 @@ class Eval(Figure):
             savedir = nn.__name__
         cls.savedir = savedir
         cls.dataset = dataset
+        statistics = Statistics.construct(
+            nn=nn, dataset=dataset, savedir=savedir,
+        )
         cls.Metadata = CompoundMetadata.combine(
             Predictions.construct(
                 nn=nn,
@@ -87,9 +92,16 @@ class Eval(Figure):
                 savedir=savedir,
                 dataset=dataset,
             ),
-            Statistics.construct(nn=nn, dataset=dataset, savedir=savedir),
+            statistics,
             Loss.construct(logdir=logdir),
             Errors.construct(nn=nn, dataset=dataset, savedir=savedir),
+            SelectExample.construct(
+                savedir=savedir,
+                dataset=dataset,
+                select=SelectExample.partial_select_percentile(50),
+                unique_name='50',
+                SelectorMetadata=statistics,
+            )
         )
         return cls
 

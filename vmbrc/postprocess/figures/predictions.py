@@ -4,8 +4,10 @@ from os import listdir, makedirs
 from os.path import join, exists, split
 from datetime import datetime
 from argparse import Namespace
+from functools import partial
 
 import numpy as np
+from skimage.measure import compare_ssim as ssim
 
 from vmbrc.__main__ import main as global_main
 from ..catalog import Metadata
@@ -15,8 +17,6 @@ TOOUTPUTS = ['ref', 'vrms', 'vint', 'vdepth']
 
 
 class Predictions(Metadata):
-    colnames = ['inputs', 'preds', 'std', 'labels', 'weights']
-
     @classmethod
     def construct(cls, *, nn, params, logdir, savedir, dataset):
         name = cls.__name__ + '_' + nn.__name__
@@ -36,6 +36,7 @@ class Predictions(Metadata):
         logdir = self.logdir
         savedir = self.savedir
         dataset = self.dataset
+        dataset._getfilelist()
 
         print("Launching inference.")
         print("NN:", nn.__name__)
@@ -44,9 +45,11 @@ class Predictions(Metadata):
         print("Case:", savedir)
 
         logdirs = listdir(logdir)
+        start_times = []
         for i, current_logdir in enumerate(logdirs):
             print(f"Using NN {i+1} out of {len(logdirs)}.")
-            print(f"Started at {datetime.now()}.")
+            start_times.append(str(datetime.now()))
+            print(f"Started at {start_times[-1]}.")
             current_logdir = join(logdir, current_logdir)
             current_savedir = f"{savedir}_{i}"
             current_args = Namespace(
@@ -64,28 +67,82 @@ class Predictions(Metadata):
                 eager=False,
             )
             global_main(current_args)
-        print(f"Finished at {datetime.now()}.")
+        end_time = str(datetime.now())
+        print(f"Finished at {end_time}.")
 
         combine_predictions(dataset, logdir, savedir)
 
+
+class SelectExample(Metadata):
+    COLNAMES = ['inputs', 'preds', 'std', 'labels', 'weights']
+
+    savedir = None
+    dataset = None
+    SelectorMetadata = None
+
+    @classmethod
+    def construct(
+        cls, *, savedir, dataset, select, unique_name, SelectorMetadata,
+    ):
+        name = '_'.join(
+            [cls.__name__, type(dataset).__name__, savedir, unique_name]
+        )
+        cls = type(name, cls.__bases__, dict(cls.__dict__))
+        cls.savedir = savedir
+        cls.dataset = dataset
+        cls.select = select
+        cls.SelectorMetadata = SelectorMetadata
+        return cls
+
+    def generate(self, _):
+        dataset = self.dataset
+        savedir = self.savedir
+
+        metadata = self.SelectorMetadata(None)
+        dataset._getfilelist()
+        filenames = dataset.files['test']
+        filename = self.select(metadata, filenames)
+
         inputs, labels, weights, filename = dataset.get_example(
-            filename=None,
+            filename=filename,
             phase='test',
             toinputs=TOINPUTS,
             tooutputs=TOOUTPUTS,
         )
 
-        preds = dataset.generator.read_predictions(filename, nn.__name__)
+        preds = dataset.generator.read_predictions(filename, savedir)
         preds = {name: preds[name] for name in TOOUTPUTS}
-        std = dataset.generator.read_predictions(
-            filename, nn.__name__ + "_std",
-        )
+        if exists(join(dataset.datatest, savedir + "_std")):
+            std = dataset.generator.read_predictions(
+                filename, savedir + "_std",
+            )
+        else:
+            std = {}
         cols = [inputs, preds, std, labels, weights]
 
-        for colname, col in zip(self.colnames, cols):
+        for colname, col in zip(self.COLNAMES, cols):
             for item, value in col.items():
                 key = colname + '/' + item
                 self[key] = value
+
+    def select(self, metadata, filenames):
+        raise NotImplementedError
+
+    def use_select_percentile(self, percentile):
+        self.select = self.partial_select_percentile(percentile)
+
+    @staticmethod
+    def partial_select_percentile(percentile):
+        return partial(SelectExample.select_percentile, percentile=percentile)
+
+    @staticmethod
+    def select_percentile(metadata, filenames, percentile):
+        metric = metadata['similarities'] or metadata['rmses']
+
+        score = np.percentile(metric, percentile, interpolation="nearest")
+        idx = np.argwhere(score == metric)[0, 0]
+        print(f"{percentile}th percentile: {score} for example {idx}.")
+        return filenames[idx]
 
 
 def combine_predictions(dataset, logdir, savedir):
@@ -138,6 +195,7 @@ class Statistics(Metadata):
     def generate(self, _):
         savedir = self.savedir
         dataset = self.dataset
+        meta_output = dataset.outputs['vint']
 
         print(f"Comparing predictions for directory {savedir}.")
         _, labels, weights, preds = read_all(dataset, savedir)
@@ -147,10 +205,12 @@ class Statistics(Metadata):
         for current_labels, current_weights, current_preds in zip(
             labels["vint"], weights["vint"], preds["vint"],
         ):
+            current_labels, _ = meta_output.postprocess(current_labels)
             current_labels *= current_weights
-            current_preds *= current_weights[..., None, None]
+            current_preds, _ = meta_output.postprocess(current_preds)
+            current_preds *= current_weights
             if current_labels.shape[1] != 1:
-                similarity = ssim(current_labels[..., None, None], current_preds)
+                similarity = ssim(current_labels, current_preds)
                 similarities = np.append(similarities, similarity)
             rmse = np.sqrt(np.mean((current_labels-current_preds)**2))
             rmses = np.append(rmses, rmse)
