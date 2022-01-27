@@ -205,9 +205,9 @@ class Statistics(Metadata):
         for current_labels, current_weights, current_preds in zip(
             labels["vint"], weights["vint"], preds["vint"],
         ):
-            current_labels, _ = meta_output.postprocess(current_labels)
+            current_labels, _ = meta_output.reduce(current_labels)
             current_labels *= current_weights
-            current_preds, _ = meta_output.postprocess(current_preds)
+            current_preds, _ = meta_output.reduce(current_preds)
             current_preds *= current_weights
             if current_labels.shape[1] != 1:
                 similarity = ssim(current_labels, current_preds)

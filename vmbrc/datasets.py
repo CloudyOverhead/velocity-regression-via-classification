@@ -399,6 +399,13 @@ class Vrms(Vrms):
         return ims
 
     def postprocess(self, output):
+        max_, std = self.reduce(output)
+        vmin, vmax = self.model.properties["vp"]
+        max_ = max_*(vmax-vmin) + vmin
+        std = std * (vmax-vmin)
+        return max_, std
+
+    def reduce(self, output):
         if output.ndim > 2 and output.shape[2] > 1:
             while output.ndim > 3:
                 assert output.shape[-1] == 1
@@ -417,9 +424,6 @@ class Vrms(Vrms):
             while max_.ndim < 2:
                 max_ = max_[..., 0]
             std = np.zeros_like(max_)
-        vmin, vmax = self.model.properties["vp"]
-        max_ = max_*(vmax-vmin) + vmin
-        std = std * (vmax-vmin)
         return max_, std
 
 

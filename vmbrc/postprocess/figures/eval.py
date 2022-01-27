@@ -9,12 +9,11 @@ import pandas as pd
 import proplot as pplt
 from matplotlib import pyplot as plt
 from matplotlib.colors import TABLEAU_COLORS
-from tensorflow.compat.v1.train import summary_iterator
 from GeoFlow.__main__ import int_or_list
 
 from vmbrc import architecture
 from vmbrc import datasets
-from vmbrc.postprocess.catalog import Figure, Metadata, CompoundMetadata
+from vmbrc.postprocess.catalog import Figure, CompoundMetadata
 from vmbrc.postprocess.figures.predictions import (
     Predictions, SelectExample, Statistics, read_all,
 )
@@ -50,7 +49,7 @@ class Errors(Statistics):
     def generate(self, _):
         dataset = self.dataset
         savedir = self.savedir
-        postprocess = dataset.outputs['vint'].postprocess
+        reduce = dataset.outputs['vint'].reduce
 
         print(f"Comparing predictions for directory {savedir}.")
         _, labels, weights, preds = read_all(dataset, savedir)
@@ -58,8 +57,8 @@ class Errors(Statistics):
         qty_timesteps = labels["vint"].shape[1]
         timesteps = np.empty_like(labels["vint"])
         timesteps[:] = np.linspace(0, 1, qty_timesteps)[None, :, None]
-        labels["vint"] = np.array([postprocess(v)[0] for v in labels["vint"]])
-        preds["vint"] = np.array([postprocess(v)[0] for v in preds["vint"]])
+        labels["vint"] = np.array([reduce(v)[0] for v in labels["vint"]])
+        preds["vint"] = np.array([reduce(v)[0] for v in preds["vint"]])
         errors = np.abs(labels["vint"] - preds["vint"])
         samples = [timesteps, labels["vint"], errors]
         samples = [s.flatten() for s in samples]
