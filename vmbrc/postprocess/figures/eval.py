@@ -3,6 +3,7 @@
 from os import listdir
 from os.path import join, exists
 from argparse import ArgumentParser
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -71,6 +72,11 @@ class Errors(Statistics):
 
 
 class Eval(Figure):
+    @property
+    def filename(self):
+        now = datetime.now().replace(microsecond=0)
+        return now.isoformat()
+
     @classmethod
     def construct(cls, *, nn, params, logdir, savedir, dataset):
         cls = type(cls.__name__, cls.__bases__, dict(cls.__dict__))
