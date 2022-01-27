@@ -75,17 +75,6 @@ class Models(Figure):
                 else:
                     col[row_name] = row[crop_top_depth:crop_bottom_depth]
 
-        tdelay = dataset.acquire.tdelay
-        start_time = crop_top*dt - tdelay
-        time = np.arange(len(regression['labels/ref']))*dt + start_time
-        dh = dataset.model.dh
-        src_rec_depth = dataset.acquire.source_depth
-        start_depth = crop_top_depth*dh + src_rec_depth
-        depth = np.arange(len(regression['labels/vdepth']))*dh + start_depth
-
-        src_pos, rec_pos = dataset.acquire.set_rec_src()
-        depth /= 1000
-
         _, axs = pplt.subplots(
             [
                 [0, 1, 0],
@@ -97,7 +86,8 @@ class Models(Figure):
             ref=2,
             figsize=[7.6, 9],
             sharey=True,
-            sharex=True,
+            sharex=False,
+            spany=False,
             spanx=True,
         )
         axs.format(abc='(a)', abcloc='l')
@@ -118,7 +108,7 @@ class Models(Figure):
                 else:
                     mask = weights['vdepth']
                 if row_name == 'vrms':
-                    vmax_ = 2100
+                    vmax_ = 2500
                 else:
                     vmax_ = None
                 col_meta[row_name].plot(
@@ -128,11 +118,28 @@ class Models(Figure):
                     vmax=vmax_,
                 )
 
+        start_time = crop_top*dt - tdelay
+        src_rec_depth = dataset.acquire.source_depth
+        start_depth = crop_top_depth*dh + src_rec_depth
 
-        axs.format(title="", ylabel="$t$ (s)", xlabel="$x$ (km)")
-        axs[0].format(title="CMP gather")
-        axs[0].format(xlabel="$h$ (km)")
-        axs[5].format(ylabel="$z$ (km)")
+        dcmp = dataset.acquire.ds * dh
+        h0 = dataset.acquire.minoffset
+
+        axs.format(title="")
+        axs[4::4].format(xlabel="Velocity (m/s)")
+        axs[0:4].format(
+            ylabel="$t$ (s)",
+            yscale=pplt.FuncScale(a=dt, b=start_time),
+        )
+        axs[0].format(
+            title="CMP gather",
+            xlabel="$h$ (km)",
+            xscale=pplt.FuncScale(a=dcmp/1000, b=h0/1000)
+        )
+        axs[4].format(
+            ylabel="$z$ (km)",
+            yscale=pplt.FuncScale(a=dh/1000, b=start_depth/1000),
+        )
 
         axs[1:].format(
             rowlabels=[
