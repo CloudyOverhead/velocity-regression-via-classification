@@ -28,7 +28,7 @@ class Loss_(Metadata):
         for nn, logdir in self.logdirs.items():
             sublogdirs = listdir(logdir)
             sublogdirs = [join(logdir, sublogdir) for sublogdir in sublogdirs]
-            mean, std = self.load_events(sublogdirs)
+            mean, std = self.load_all_events(sublogdirs)
             for item, value in zip(['mean', 'std'], [mean, std]):
                 key = nn + '/' + item
                 self[key] = value
