@@ -45,6 +45,8 @@ class Predictions(Metadata):
         print("Case:", savedir)
 
         logdirs = listdir(logdir)
+        if 'saved_model.pb' in logdirs:
+            logdirs = ['']
         start_times = []
         for i, current_logdir in enumerate(logdirs):
             print(f"Using NN {i+1} out of {len(logdirs)}.")
@@ -148,6 +150,8 @@ class SelectExample(Metadata):
 def combine_predictions(dataset, logdir, savedir):
     print("Averaging predictions.")
     logdirs = listdir(logdir)
+    if 'saved_model.pb' in logdirs:
+        logdirs = ['']
     dataset._getfilelist()
     for filename in dataset.files["test"]:
         preds = {key: [] for key in dataset.generator.outputs}
