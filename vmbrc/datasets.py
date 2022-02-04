@@ -421,7 +421,7 @@ class Vrms(Vrms):
             std = np.sqrt(var)
         else:
             max_ = output
-            while max_.ndim < 2:
+            while max_.ndim > 2:
                 max_ = max_[..., 0]
             std = np.zeros_like(max_)
         return max_, std
