@@ -45,7 +45,7 @@ class Predictions(Metadata):
         print("Case:", savedir)
 
         logdirs = listdir(logdir)
-        if 'saved_model.pb' in logdirs:
+        if any('checkpoint' in dir for dir in logdirs):
             logdirs = ['']
         start_times = []
         for i, current_logdir in enumerate(logdirs):
@@ -150,7 +150,7 @@ class SelectExample(Metadata):
 def combine_predictions(dataset, logdir, savedir):
     print("Averaging predictions.")
     logdirs = listdir(logdir)
-    if 'saved_model.pb' in logdirs:
+    if any('checkpoint' in dir for dir in logdirs):
         logdirs = ['']
     dataset._getfilelist()
     for filename in dataset.files["test"]:
