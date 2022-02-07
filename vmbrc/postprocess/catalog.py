@@ -1,11 +1,22 @@
 from os import listdir, remove
 from os.path import join, exists, split
 from copy import copy
+import re
 
 from matplotlib.figure import Figure
 from matplotlib import pyplot as plt
 from h5py import File
 from inflection import underscore
+
+
+class regex_dict(dict):
+    def __getitem__(self, key):
+        if '*' in key:
+            key = key.replace('*', '.*')
+            matches = list(filter(re.compile(key).match, self.keys()))
+            assert len(matches) == 1
+            key = matches[0]
+        return super().__getitem__(key)
 
 
 class Catalog(list):
@@ -87,11 +98,11 @@ class Metadata(File):
             return {item: self[key+'/'+item] for item in value.keys()}
 
 
-class CompoundMetadata(dict):
+class CompoundMetadata(regex_dict):
     @classmethod
     def combine(cls, *others):
         cls = copy(cls)
-        cls._children = {}
+        cls._children = regex_dict()
         for child in others:
             if issubclass(child, CompoundMetadata):
                 cls._children.update(child._children)
