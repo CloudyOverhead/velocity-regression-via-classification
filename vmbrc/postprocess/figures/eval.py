@@ -111,8 +111,7 @@ class Eval(Figure):
         return cls
 
     def plot(self, data):
-        name = self.nn.__name__
-        error_meta = self.Metadata._children[f'Errors_{name}']
+        error_meta = self.Metadata._children['Errors*']
         self.error_bins = error_meta.error_bins
         self.target_bins = error_meta.target_bins
         self.depth_bins = error_meta.depth_bins
@@ -127,7 +126,7 @@ class Eval(Figure):
         _, axs = pplt.subplots(
             ncols=3, nrows=2, figsize=[9, 6], sharex=False, sharey=False,
         )
-        metadata = data[f'Predictions_{name}']
+        metadata = data['SelectExample*']
         input_meta = self.dataset.inputs['shotgather']
         output_meta = self.dataset.outputs['vint']
 
@@ -161,10 +160,10 @@ class Eval(Figure):
             self.imshow_example(
                 axs[1], output_meta, pred, dt=dt, title="Estimation",
             )
-        self.hist_errors(axs[2], data[f'Statistics_{name}/rmses'])
+        self.hist_errors(axs[2], data['Statistics*/rmses'])
         self.plot_loss(axs[3], data['Loss/losses'])
-        self.density_errors_vs_target(axs[4], data[f'Errors_{name}/errors'])
-        self.density_errors_vs_depth(axs[5], data[f'Errors_{name}/errors'])
+        self.density_errors_vs_target(axs[4], data['Errors*/errors'])
+        self.density_errors_vs_depth(axs[5], data['Errors*/errors'])
 
     def imshow_data(self, ax, input_meta, data, dt=1):
         input_meta.plot(data[:, ::-1], axs=[ax])
