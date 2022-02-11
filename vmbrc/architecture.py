@@ -111,7 +111,7 @@ class RCNN2DRegressor(RCNN2D):
             name="vdepth",
         )
 
-        for layer in self.freeze:
+        for layer in params.freeze:
             layer = eval('self.' + layer)
             layer.trainable = False
 
@@ -210,7 +210,7 @@ class RCNN2DClassifier(RCNN2DRegressor):
             params.decode_tries,
         )
 
-        for layer in self.freeze:
+        for layer in params.freeze:
             layer = eval('self.' + layer)
             layer.trainable = False
 
