@@ -220,7 +220,9 @@ class RCNN2DClassifier(RCNN2DRegressor):
             if lbl == 'ref':
                 losses[lbl] = ref_loss()
             else:
-                losses[lbl] = stochastic_v_loss(self.params.decode_bins)
+                losses[lbl] = stochastic_v_loss(
+                    self.params.decode_bins, scale=.05,
+                )
             losses_weights[lbl] = self.params.loss_scales[lbl]
 
         return losses, losses_weights
@@ -422,14 +424,12 @@ class Hyperparameters1D(Hyperparameters):
         self.decode_tries = 16
 
         if is_training:
-            self.epochs = (20, 20, 10)
+            self.epochs = (10, 20, 10)
             self.loss_scales = (
-                {'ref': .6, 'vrms': .3, 'vint': .1, 'vdepth': .0},
-                {'ref': .1, 'vrms': .5, 'vint': .2, 'vdepth': .0},
+                {'ref': .4, 'vrms': .5, 'vint': .1, 'vdepth': .0},
+                {'ref': .1, 'vrms': .6, 'vint': .2, 'vdepth': .0},
                 {'ref': .1, 'vrms': .2, 'vint': .4, 'vdepth': .1},
             )
-            self.seed = (0, 1, 2)
-            self.freeze_to = (None, None, None)
 
 
 class Hyperparameters2D(Hyperparameters1D):
@@ -455,10 +455,9 @@ class Hyperparameters2D(Hyperparameters1D):
                 join(".", "logs", "weights_1d", "0", "checkpoint_60")
             )
             self.restore_from = (CHECKPOINT_1D, None, None)
-            self.seed = (3, 4, 5)
 
 
-def stochastic_v_loss(decode_bins):
+def stochastic_v_loss(decode_bins, scale=1):
     bins = list(np.linspace(0, 1, decode_bins+1))
 
     def loss(label, output):
@@ -470,7 +469,7 @@ def stochastic_v_loss(decode_bins):
         loss = categorical_crossentropy(one_hot, output)
         loss *= weight
         loss = tf.reduce_mean(loss, axis=[1, 2])
-        return loss
+        return scale * loss
     return loss
 
 
