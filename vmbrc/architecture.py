@@ -45,8 +45,6 @@ class RCNN2DRegressor(RCNN2D):
             input_shape=inputs['shotgather'].shape,
             batch_size=batch_size,
         )
-        if params.freeze_to in ['encoder', 'rcnn', 'rvcnn', 'rnn']:
-            self.encoder.trainable = False
 
         self.rcnn = build_rcnn(
             reps=7,
@@ -57,8 +55,6 @@ class RCNN2DRegressor(RCNN2D):
             batch_size=batch_size,
             name="rcnn",
         )
-        if params.freeze_to in ['rcnn', 'rvcnn', 'rnn']:
-            self.rcnn.trainable = False
 
         self.rvcnn = Conv3D(
             params.rcnn_filters,
@@ -70,8 +66,6 @@ class RCNN2DRegressor(RCNN2D):
             batch_size=batch_size,
             name="rvcnn",
         )
-        if params.freeze_to in ['rvcnn', 'rnn']:
-            self.rvcnn.trainable = False
 
         shape_before_pooling = np.array(self.rcnn.output_shape)
         shape_after_pooling = tuple(shape_before_pooling[[0, 1, 3, 4]])
@@ -92,8 +86,6 @@ class RCNN2DRegressor(RCNN2D):
             batch_size=batch_size,
             name="rnn",
         )
-        if params.freeze_to in ['rnn']:
-            self.rnn.trainable = False
 
         input_shape = self.rnn.output_shape
         self.decoder['vint'] = Conv2D(
@@ -118,6 +110,10 @@ class RCNN2DRegressor(RCNN2D):
             batch_size,
             name="vdepth",
         )
+
+        for layer in self.freeze:
+            layer = eval('self.' + layer)
+            layer.trainable = False
 
     def call(self, inputs):
         outputs = {}
@@ -213,6 +209,10 @@ class RCNN2DClassifier(RCNN2DRegressor):
             params.decode_bins,
             params.decode_tries,
         )
+
+        for layer in self.freeze:
+            layer = eval('self.' + layer)
+            layer.trainable = False
 
     def build_losses(self):
         losses, losses_weights = {}, {}
