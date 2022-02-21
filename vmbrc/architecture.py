@@ -145,9 +145,9 @@ class RCNN2DRegressor(RCNN2D):
             if lbl == 'ref':
                 losses[lbl] = ref_loss()
             elif lbl == 'vrms':
-                losses[lbl] = v_compound_loss(beta=.0, normalize=True)
+                losses[lbl] = v_compound_loss(beta=.0, normalize=False)
             else:
-                losses[lbl] = v_compound_loss(normalize=True)
+                losses[lbl] = v_compound_loss(normalize=False)
             losses_weights[lbl] = self.params.loss_scales[lbl]
 
         return losses, losses_weights
@@ -221,9 +221,9 @@ class RCNN2DClassifier(RCNN2DRegressor):
                     self.params.decode_bins, scale=.05,
                 )
             elif lbl == 'vrms':
-                losses[lbl] = v_compound_loss(beta=.0, normalize=True)
+                losses[lbl] = v_compound_loss(beta=.0, normalize=False)
             else:
-                losses[lbl] = v_compound_loss(normalize=True)
+                losses[lbl] = v_compound_loss(normalize=False)
             losses_weights[lbl] = self.params.loss_scales[lbl]
 
         return losses, losses_weights
