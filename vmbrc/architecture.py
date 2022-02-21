@@ -13,6 +13,7 @@ from tensorflow.keras.layers import (
     Dropout, Lambda,
 )
 from tensorflow.keras.losses import categorical_crossentropy
+from tensorflow.keras.initializers import Constant
 from tensorflow.keras.backend import reshape, ndim
 from tensorflow.python.ops.math_ops import _bucketize as digitize
 from GeoFlow.DefinedNN.RCNN2D import RCNN2D, Hyperparameters, build_rcnn
@@ -77,6 +78,7 @@ class RCNN2DRegressor(RCNN2D):
             activation='sigmoid',
             input_shape=shape_after_pooling,
             batch_size=batch_size,
+            bias_initializer=Constant(-3),
             name="ref",
         )
 
@@ -94,6 +96,7 @@ class RCNN2DRegressor(RCNN2D):
             padding='same',
             input_shape=input_shape,
             batch_size=batch_size,
+            use_bias=False,
             name="vint",
         )
 
@@ -416,7 +419,7 @@ class Hyperparameters1D(Hyperparameters):
         super().__init__()
 
         self.steps_per_epoch = 100
-        self.batch_size = 4
+        self.batch_size = 16
 
         self.learning_rate = 8E-4
 
