@@ -145,9 +145,9 @@ class RCNN2DRegressor(RCNN2D):
             if lbl == 'ref':
                 losses[lbl] = ref_loss()
             elif lbl == 'vrms':
-                losses[lbl] = v_compound_loss(beta=.0, normalize=False)
+                losses[lbl] = v_compound_loss(beta=.0, normalize=True)
             else:
-                losses[lbl] = v_compound_loss(normalize=False)
+                losses[lbl] = v_compound_loss(normalize=True)
             losses_weights[lbl] = self.params.loss_scales[lbl]
 
         return losses, losses_weights
@@ -200,17 +200,11 @@ class RCNN2DClassifier(RCNN2DRegressor):
             use_bias=False,
             name="vint",
         )
-        self.decoder['vrms'] = make_converter_stochastic(
-            self.decoder['vrms'],
-            batch_size,
-            params.decode_bins,
-            params.decode_tries,
+        self.decoder['vrms'] = wrap_use_argmax(
+            self.decoder['vrms'], batch_size, params.decode_bins,
         )
-        self.decoder['vdepth'] = make_converter_stochastic(
-            self.decoder['vdepth'],
-            batch_size,
-            params.decode_bins,
-            params.decode_tries,
+        self.decoder['vdepth'] = wrap_use_argmax(
+            self.decoder['vdepth'], batch_size, params.decode_bins,
         )
 
         for layer in params.freeze:
@@ -222,10 +216,14 @@ class RCNN2DClassifier(RCNN2DRegressor):
         for lbl in self.tooutputs:
             if lbl == 'ref':
                 losses[lbl] = ref_loss()
-            else:
+            elif lbl == 'vint':
                 losses[lbl] = stochastic_v_loss(
                     self.params.decode_bins, scale=.05,
                 )
+            elif lbl == 'vrms':
+                losses[lbl] = v_compound_loss(beta=.0, normalize=True)
+            else:
+                losses[lbl] = v_compound_loss(normalize=True)
             losses_weights[lbl] = self.params.loss_scales[lbl]
 
         return losses, losses_weights
@@ -424,7 +422,6 @@ class Hyperparameters1D(Hyperparameters):
         self.learning_rate = 8E-4
 
         self.decode_bins = 128
-        self.decode_tries = 16
 
         if is_training:
             self.epochs = (10, 20, 10)
@@ -476,38 +473,13 @@ def stochastic_v_loss(decode_bins, scale=1):
     return loss
 
 
-def make_converter_stochastic(converter, batch_size, qty_bins, tries):
+def wrap_use_argmax(converter, batch_size, qty_bins):
     input_shape = (*converter.input_shape[1:-1], qty_bins)
     input_dtype = converter.inputs[0].dtype
 
     input = Input(shape=input_shape, batch_size=batch_size, dtype=input_dtype)
-    nd_categorical = partial(
-        tf.random.categorical, num_samples=tries, dtype=tf.int32,
-    )
-    for i in range(ndim(input)-2):
-        nd_categorical = partial(tf.map_fn, nd_categorical, dtype=tf.int32)
-    logits = tf.math.log(input)
-    try:
-        v = nd_categorical(logits)
-    except TypeError:
-        v = Lambda(nd_categorical)(logits)
+    v = tf.argmax(input, axis=-1)
     v = tf.cast(v, tf.float32)
     v = (v+.5) / qty_bins
-    v = tf.transpose(v, [ndim(v)-1, *range(0, ndim(v)-1)])
-    try:
-        v = tf.map_fn(converter, v)
-    except TypeError:
-        v = Lambda(lambda v: tf.map_fn(converter, v))(v)
-    bins = np.linspace(0, 1, qty_bins+1, dtype=np.float32)
-    bins = list(bins)
-    try:
-        v = digitize(v, bins)
-    except TypeError:
-        v = Lambda(lambda v: digitize(v, bins))(v)
-    v = tf.cast(v, tf.int32)
-    bins_idx = tf.range(qty_bins)
-    while ndim(bins_idx) != ndim(v):
-        bins_idx = bins_idx[None]
-    matches = tf.cast(v == bins_idx, dtype=tf.float32)
-    p = tf.reduce_sum(matches, axis=0, keepdims=False) / tries
-    return Model(inputs=input, outputs=p, name=f"stochastic_{converter.name}")
+    v = converter(v)
+    return Model(inputs=input, outputs=v, name=f"wrapped_{converter.name}")
