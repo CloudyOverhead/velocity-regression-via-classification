@@ -18,8 +18,12 @@ TOOUTPUTS = ['ref', 'vrms', 'vint', 'vdepth']
 
 class Predictions(Metadata):
     @classmethod
-    def construct(cls, *, nn, params, logdir, savedir, dataset):
+    def construct(
+        cls, *, nn, params, logdir, savedir, dataset, unique_suffix=None,
+    ):
         name = cls.__name__ + '_' + nn.__name__
+        if unique_suffix is not None:
+            name = name + '_' + unique_suffix
         cls = type(name, cls.__bases__, dict(cls.__dict__))
         cls.nn = nn
         cls.params = params
@@ -84,10 +88,10 @@ class SelectExample(Metadata):
 
     @classmethod
     def construct(
-        cls, *, savedir, dataset, select, unique_name, SelectorMetadata,
+        cls, *, savedir, dataset, select, unique_suffix, SelectorMetadata,
     ):
         name = '_'.join(
-            [cls.__name__, type(dataset).__name__, savedir, unique_name]
+            [cls.__name__, type(dataset).__name__, savedir, unique_suffix]
         )
         cls = type(name, cls.__bases__, dict(cls.__dict__))
         cls.savedir = savedir
@@ -186,8 +190,10 @@ class Statistics(Metadata):
     colnames = ['similarities', 'rmses']
 
     @classmethod
-    def construct(cls, nn, dataset, savedir):
+    def construct(cls, *, nn, dataset, savedir, unique_suffix=None):
         name = cls.__name__ + '_' + nn.__name__
+        if unique_suffix is not None:
+            name = name + '_' + unique_suffix
         cls = type(name, cls.__bases__, dict(cls.__dict__))
         cls.nn = nn
         if savedir is None:
