@@ -110,12 +110,13 @@ class CompoundMetadata(regex_dict):
         return cls
 
     def __init__(self, gpus):
+        super(regex_dict, self).__init__()
         for key, child in self._children.items():
             self[key] = child(gpus)
 
     def __getitem__(self, key):
         name, *key = key.split('/')
-        child = super().__getitem__(name)
+        child = super(regex_dict, self).__getitem__(name)
         if key:
             key = '/'.join(key)
             return child[key]
