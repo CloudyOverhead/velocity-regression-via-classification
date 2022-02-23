@@ -14,9 +14,10 @@ from .predictions import Predictions, Statistics, read_all
 
 bins_params = []
 params = Hyperparameters1D(is_training=False)
-for qty_bins in enumerate([16, 32, 64, 128]):
+params.batch_size = 4
+for qty_bins in [16, 32, 64, 128]:
     p = deepcopy(params)
-    p.qty_bins = qty_bins
+    p.decode_bins = qty_bins
     bins_params.append(p)
 
 
@@ -95,11 +96,20 @@ class MinimumErrorBins(Figure):
         labels = self.Metadata._children['MinimumErrorBins_'].LABELS
         qty_bins = self.Metadata._children['MinimumErrorBins_'].QTY_BINS
         for line, label in zip(error.T, labels):
-            ax.plot(qty_bins, line, label=label)
+            ax.plot(qty_bins, line, label="Theoretical minimum")
+
+        qty_bins = []
+        line = []
+        for i, params in enumerate(bins_params):
+            key = f"Statistics_RCNN2DClassifier_Bins_{i}"
+            rmses = data[key]['rmses']
+            qty_bins.append(params.decode_bins)
+            line.append(rmses.mean())
+        ax.plot(qty_bins, line, label="Achieved by classifier")
 
         ax.format(
             xlabel="Quantity of bins (―)",
-            ylabel="Minimum achievable RMSE (m/s)",
+            ylabel="RMSE (m/s)",
         )
         ax.legend()
 

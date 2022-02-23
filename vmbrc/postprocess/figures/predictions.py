@@ -245,6 +245,7 @@ def read_all(dataset, savedir=None, toinputs=TOINPUTS, tooutputs=TOOUTPUTS):
     all_labels = {}
     all_weights = {}
     all_preds = {}
+    dataset._getfilelist()
     for example in dataset.files["test"]:
         inputs, labels, weights, filename = dataset.get_example(
             example,
