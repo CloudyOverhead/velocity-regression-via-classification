@@ -103,14 +103,13 @@ class CompoundMetadata(regex_dict):
         cls = type(cls.__name__, cls.__bases__, dict(cls.__dict__))
         cls._children = regex_dict()
         for child in others:
-            if issubclass(child, CompoundMetadata):
+            if child.__name__ == cls.__name__:  # If is subclass.
                 cls._children.update(child._children)
             else:
                 cls._children[child.__name__] = child
         return cls
 
     def __init__(self, gpus):
-        super().__init__(self)
         for key, child in self._children.items():
             self[key] = child(gpus)
 
