@@ -1,6 +1,5 @@
 from os import listdir, remove
 from os.path import join, exists, split
-from copy import copy
 import re
 
 from matplotlib.figure import Figure
@@ -101,7 +100,7 @@ class Metadata(File):
 class CompoundMetadata(regex_dict):
     @classmethod
     def combine(cls, *others):
-        cls = copy(cls)
+        cls = type(cls.__name__, cls.__bases__, dict(cls.__dict__))
         cls._children = regex_dict()
         for child in others:
             if issubclass(child, CompoundMetadata):
