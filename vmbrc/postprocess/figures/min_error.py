@@ -1,12 +1,51 @@
 # -*- coding: utf-8 -*-
 
+from os.path import join
+from copy import deepcopy
+
 import numpy as np
 import proplot as pplt
 
 from vmbrc.datasets import Article1D
-from vmbrc.architecture import Hyperparameters1D
-from ..catalog import catalog, Figure, Metadata
-from .predictions import read_all
+from vmbrc.architecture import RCNN2DClassifier, Hyperparameters1D
+from ..catalog import catalog, Figure, Metadata, CompoundMetadata
+from .predictions import Predictions, Statistics, read_all
+
+
+bins_params = []
+params = Hyperparameters1D(is_training=False)
+for qty_bins in enumerate([16, 32, 64, 128]):
+    p = deepcopy(params)
+    p.qty_bins = qty_bins
+    bins_params.append(p)
+
+
+CompoundBinsPredictions = CompoundMetadata.combine(
+    *(
+        Predictions.construct(
+            nn=RCNN2DClassifier,
+            params=params,
+            logdir=join('logs', 'classifier-bins', str(i)),
+            savedir=f'Bins_{i}',
+            dataset=Article1D(params),
+            unique_suffix=f"Bins_{i}",
+        )
+        for i, params in enumerate(bins_params)
+    )
+)
+
+
+CompoundBinsStatistics = CompoundMetadata.combine(
+    *(
+        Statistics.construct(
+            nn=RCNN2DClassifier,
+            savedir=f'Bins_{i}',
+            dataset=Article1D(params),
+            unique_suffix=f"Bins_{i}",
+        )
+        for i, params in enumerate(bins_params)
+    )
+)
 
 
 class MinimumErrorBins_(Metadata):
@@ -14,14 +53,14 @@ class MinimumErrorBins_(Metadata):
     DATASET = Article1D(PARAMS)
     DATASET._getfilelist()
     QTY_BINS = np.logspace(4, 7, num=10, base=2, dtype=int)
-    LABELS = ['vrms', 'vint', 'vdepth']
+    LABELS = ['vint']
 
     def generate(self, _):
         dataset = self.DATASET
 
         print("Computing minimum error due to having bins.")
         _, labels, weights, _ = read_all(
-            dataset, toinputs=[], tooutputs=['vrms', 'vint', 'vdepth'],
+            dataset, toinputs=[], tooutputs=self.LABELS,
         )
 
         error = np.empty([len(self.QTY_BINS), len(self.LABELS)])
@@ -43,14 +82,20 @@ class MinimumErrorBins_(Metadata):
 
 
 class MinimumErrorBins(Figure):
-    Metadata = MinimumErrorBins_
+    Metadata = CompoundMetadata.combine(
+        MinimumErrorBins_,
+        CompoundBinsPredictions,
+        CompoundBinsStatistics,
+    )
 
     def plot(self, data):
-        error = data['error']
+        error = data['MinimumErrorBins_/error']
         _, ax = pplt.subplots(nrows=1, ncols=1)
 
-        for line, label in zip(error[:].T, self.Metadata.LABELS):
-            ax.plot(self.Metadata.QTY_BINS, line, label=label)
+        labels = self.Metadata._children['MinimumErrorBins_'].LABELS
+        qty_bins = self.Metadata._children['MinimumErrorBins_'].QTY_BINS
+        for line, label in zip(error.T, labels):
+            ax.plot(qty_bins, line, label=label)
 
         ax.format(
             xlabel="Quantity of bins (―)",
