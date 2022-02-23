@@ -104,7 +104,7 @@ class Eval(Figure):
                 savedir=savedir,
                 dataset=dataset,
                 select=SelectExample.partial_select_percentile(50),
-                unique_name='50',
+                unique_suffix='50',
                 SelectorMetadata=statistics,
             )
         )
