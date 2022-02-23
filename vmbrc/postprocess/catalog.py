@@ -100,7 +100,8 @@ class Metadata(File):
 class CompoundMetadata(regex_dict):
     @classmethod
     def combine(cls, *others):
-        cls = type(cls.__name__, cls.__bases__, dict(cls.__dict__))
+        class cls(cls):
+            pass
         cls._children = regex_dict()
         for child in others:
             if child.__name__ == cls.__name__:  # If is subclass.
@@ -110,13 +111,13 @@ class CompoundMetadata(regex_dict):
         return cls
 
     def __init__(self, gpus):
-        super(regex_dict, self).__init__()
+        super().__init__()
         for key, child in self._children.items():
             self[key] = child(gpus)
 
     def __getitem__(self, key):
         name, *key = key.split('/')
-        child = super(regex_dict, self).__getitem__(name)
+        child = super().__getitem__(name)
         if key:
             key = '/'.join(key)
             return child[key]
