@@ -105,13 +105,20 @@ class MinimumErrorBins(Figure):
             rmses = data[key]['rmses']
             qty_bins.append(params.decode_bins)
             line.append(rmses.mean())
-        ax.plot(qty_bins, line, label="Achieved by classifier")
+        ax.plot(
+            qty_bins,
+            line,
+            ls=':',
+            m='o',
+            ms=4,
+            label="Achieved by classifier",
+        )
 
         ax.format(
             xlabel="Quantity of bins (―)",
             ylabel="RMSE (m/s)",
         )
-        ax.legend()
+        ax.legend(loc='lower center', bbox_to_anchor=(.5, 1.))
 
 
 catalog.register(MinimumErrorBins)
