@@ -111,30 +111,34 @@ class Eval(Figure):
         return cls
 
     def plot(self, data):
+        dataset = self.dataset
+
         error_meta = self.Metadata._children['Errors*']
         self.error_bins = error_meta.error_bins
         self.target_bins = error_meta.target_bins
         self.depth_bins = error_meta.depth_bins
 
-        vmin, vmax = self.dataset.model.properties['vp']
-        dt = self.dataset.acquire.dt
-        nt = self.dataset.acquire.NT
+        vmin, vmax = dataset.model.properties['vp']
+        dt = dataset.acquire.dt
+        nt = dataset.acquire.NT
         self.error_bins *= vmax - vmin
         self.target_bins = self.target_bins*(vmax-vmin) + vmin
         self.depth_bins *= dt * nt
+
+        dataset.acquire.dt *= dataset.acquire.resampling
 
         _, axs = pplt.subplots(
             ncols=3, nrows=2, figsize=[9, 6], sharex=False, sharey=False,
         )
         metadata = data['SelectExample*']
-        input_meta = self.dataset.inputs['shotgather']
-        output_meta = self.dataset.outputs['vint']
+        input_meta = dataset.inputs['shotgather']
+        output_meta = dataset.outputs['vint']
 
         suptitle = " ― ".join(
             [
                 "NN " + self.nn.__name__,
                 "Hyperparameters " + type(self.params).__name__,
-                "Dataset " + type(self.dataset).__name__,
+                "Dataset " + type(dataset).__name__,
                 "Directory " + self.savedir,
             ]
         )
@@ -143,37 +147,37 @@ class Eval(Figure):
         label = metadata['labels']['vint']
         pred = metadata['preds']['vint']
         is_1d = label.shape[1] == 1
-        dt = self.dataset.acquire.dt * self.dataset.acquire.resampling
 
         if is_1d:
-            self.imshow_data(axs[0], input_meta, input, dt=dt)
+            self.imshow_data(axs[0], input_meta, input)
             self.imshow_example(
-                axs[1], output_meta, label, dt=dt, label="Label",
+                axs[1], output_meta, label, label="Label",
             )
             self.imshow_example(
-                axs[1], output_meta, pred, dt=dt, label="Estimation",
+                axs[1], output_meta, pred, label="Estimation",
             )
         else:
             self.imshow_example(
-                axs[0], output_meta, label, dt=dt, title="Label",
+                axs[0], output_meta, label, title="Label",
             )
             self.imshow_example(
-                axs[1], output_meta, pred, dt=dt, title="Estimation",
+                axs[1], output_meta, pred, title="Estimation",
             )
         self.hist_errors(axs[2], data['Statistics*/rmses'])
         self.plot_loss(axs[3], data['Loss/losses'])
         self.density_errors_vs_target(axs[4], data['Errors*/errors'])
         self.density_errors_vs_depth(axs[5], data['Errors*/errors'])
 
-    def imshow_data(self, ax, input_meta, data, dt=1):
+    def imshow_data(self, ax, input_meta, data):
         input_meta.plot(data[:, ::-1], axs=[ax])
+        dt = self.dataset.acquire.dt
         ax.format(
             title="",
             xticks=[],
             yformatter=lambda x, _: x * dt,
         )
 
-    def imshow_example(self, ax, output_meta, data, dt=1, title="", label=""):
+    def imshow_example(self, ax, output_meta, data, title="", label=""):
         data, _ = output_meta.postprocess(data)
         weights = np.ones_like(data)
         im = output_meta.plot([data, None], weights=weights, axs=[ax])
@@ -182,9 +186,10 @@ class Eval(Figure):
         if label:
             im.set_label(label)
             ax.legend()
+        vmin, vmax = self.dataset.model.properties['vp']
+        dt = self.dataset.acquire.dt
         ax.format(
             title=title,
-            xticks=[],
             yformatter=lambda x, _: x * dt,
         )
 
