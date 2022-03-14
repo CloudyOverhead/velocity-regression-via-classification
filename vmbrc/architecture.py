@@ -39,7 +39,7 @@ class RCNN2DRegressor(RCNN2D):
 
         self.decoder = {}
 
-        self.encoder = build_encoder(
+        self.encoder = self.build_encoder(
             kernels=params.encoder_kernels,
             dilation_rates=params.encoder_dilations,
             qties_filters=params.encoder_filters,
@@ -82,7 +82,7 @@ class RCNN2DRegressor(RCNN2D):
             name="ref",
         )
 
-        self.rnn = build_rnn(
+        self.rnn = self.build_rnn(
             units=200,
             input_shape=shape_after_pooling,
             batch_size=batch_size,
@@ -117,6 +117,48 @@ class RCNN2DRegressor(RCNN2D):
         for layer in params.freeze:
             layer = eval('self.' + layer)
             layer.trainable = False
+
+    def build_encoder(
+        self, kernels, qties_filters, dilation_rates, input_shape, batch_size,
+        input_dtype=tf.float32, transpose=False, name="encoder",
+    ):
+        input_shape = input_shape[1:]
+        Conv = Conv3D if not transpose else Conv3DTranspose
+        input = Input(shape=input_shape, batch_size=batch_size, dtype=input_dtype)
+
+        encoder = Sequential(name=name)
+        encoder.add(input)
+        for kernel, qty_filters, dilation_rate in zip(
+            kernels, qties_filters, dilation_rates,
+        ):
+            conv = Conv(
+                qty_filters, kernel, dilation_rate=dilation_rate, padding='same',
+            )
+            encoder.add(conv)
+            encoder.add(ReLU())
+            encoder.add(Dropout(.5))
+        return encoder
+
+    def build_rnn(
+        self, units, input_shape, batch_size, input_dtype=tf.float32,
+        name="rnn",
+    ):
+        input_shape = input_shape[1:]
+        input = Input(shape=input_shape, batch_size=batch_size, dtype=input_dtype)
+        data_stream = Permute((2, 1, 3))(input)
+        batches, shots, timesteps, filter_dim = data_stream.get_shape()
+        data_stream = reshape(
+            data_stream, [batches*shots, timesteps, filter_dim],
+        )
+        lstm = Bidirectional(LSTM(units, return_sequences=True), merge_mode='ave')
+        data_stream = lstm(data_stream)
+        data_stream = reshape(
+            data_stream, [batches, shots, timesteps, units],
+        )
+        data_stream = Permute((2, 1, 3))(data_stream)
+
+        rnn = Model(inputs=input, outputs=data_stream, name=name)
+        return rnn
 
     def call(self, inputs):
         outputs = {}
@@ -229,47 +271,6 @@ class RCNN2DClassifier(RCNN2DRegressor):
         return losses, losses_weights
 
 
-def build_encoder(
-    kernels, qties_filters, dilation_rates, input_shape, batch_size,
-    input_dtype=tf.float32, transpose=False, name="encoder",
-):
-    input_shape = input_shape[1:]
-    Conv = Conv3D if not transpose else Conv3DTranspose
-    input = Input(shape=input_shape, batch_size=batch_size, dtype=input_dtype)
-
-    encoder = Sequential(name=name)
-    encoder.add(input)
-    for kernel, qty_filters, dilation_rate in zip(
-        kernels, qties_filters, dilation_rates,
-    ):
-        conv = Conv(
-            qty_filters, kernel, dilation_rate=dilation_rate, padding='same',
-        )
-        encoder.add(conv)
-        encoder.add(ReLU())
-        encoder.add(Dropout(.5))
-    return encoder
-
-
-def build_rnn(
-    units, input_shape, batch_size, input_dtype=tf.float32, name="rnn",
-):
-    input_shape = input_shape[1:]
-    input = Input(shape=input_shape, batch_size=batch_size, dtype=input_dtype)
-    data_stream = Permute((2, 1, 3))(input)
-    batches, shots, timesteps, filter_dim = data_stream.get_shape()
-    data_stream = reshape(
-        data_stream, [batches*shots, timesteps, filter_dim],
-    )
-    lstm = Bidirectional(LSTM(units, return_sequences=True), merge_mode='ave')
-    data_stream = lstm(data_stream)
-    data_stream = reshape(
-        data_stream, [batches, shots, timesteps, units],
-    )
-    data_stream = Permute((2, 1, 3))(data_stream)
-
-    rnn = Model(inputs=input, outputs=data_stream, name=name)
-    return rnn
 
 
 class RCNN2DUnpackReal(RCNN2DClassifier):
