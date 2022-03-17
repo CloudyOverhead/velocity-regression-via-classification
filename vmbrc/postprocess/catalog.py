@@ -69,7 +69,7 @@ class Metadata(File):
 
     @property
     def filepath(self):
-        return join(Catalog.dir, self.filename)
+        return join(Catalog.dir, 'metadata', self.filename)
 
     def __init__(self, gpus, *args, **kwargs):
         is_not_generated = not exists(self.filepath)
