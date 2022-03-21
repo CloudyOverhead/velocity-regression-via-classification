@@ -9,8 +9,8 @@ from vmbrc.datasets import Article1D
 from vmbrc.architecture import (
     RCNN2DRegressor, RCNN2DClassifier, Hyperparameters1D,
 )
-from ..catalog import catalog, Figure, CompoundMetadata
-from .predictions import Predictions, Statistics, SelectExample
+from ..catalog import catalog, Figure, Metadata, CompoundMetadata
+from .predictions import Predictions, Statistics, SelectExample, read_all
 
 TOINPUTS = ['shotgather']
 TOOUTPUTS = ['ref', 'vrms', 'vint', 'vdepth']
@@ -35,6 +35,48 @@ savedirs = [
     "Classifier", *(f"Classifier_{i}" for i in range(16)),
 ]
 dataset = Article1D(params)
+
+
+class STDStatistics(Metadata):
+    messages = [
+        "Regressor average STD",
+        "Average classifier average STD",
+        "Ensemble classifier average STD",
+    ]
+    keys = ['regressor_std', 'classifier_std', 'ensemble_classifier_std']
+
+    def generate(self, _):
+        print("Computing STD statistics.")
+        meta_output = dataset.outputs['vint']
+
+        all_savedirs = [
+            ["Regressor_std"],
+            ["Classifier"],
+            [f"Classifier_{i}" for i in range(16)],
+        ]
+        vmin, vmax = dataset.model.properties['vp']
+        for savedirs, key in zip(all_savedirs, self.keys):
+            stds = np.array([])
+            for savedir in savedirs:
+                _, labels, weights, preds = read_all(dataset, savedir)
+                for label, w, v in zip(
+                    labels["vint"], weights["vint"], preds["vint"],
+                ):
+                    if 'std' in savedir:
+                        v = v[..., 0, 0]
+                        std = v * (vmax-vmin)
+                    else:
+                        _, std = meta_output.postprocess(v)
+                    y_start = np.argmax(label != label[0])
+                    y_end = np.argmax(w == 0)
+                    std = std[y_start:y_end]
+                    stds = np.append(stds, std)
+            self[key] = stds.mean()
+
+    def print_statistics(self):
+        for key, message in zip(self.keys, self.messages):
+            std = self[key]
+            print(f"{message}:", np.mean(std))
 
 
 class CompareSTD(Figure):
@@ -63,9 +105,12 @@ class CompareSTD(Figure):
             )
             for savedir in savedirs
         ),
+        STDStatistics,
     )
 
     def plot(self, data):
+        data['STDStatistics'].print_statistics()
+
         fig, axs = pplt.subplots(
             nrows=1,
             ncols=5,
