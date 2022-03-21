@@ -155,7 +155,7 @@ class Figure(Figure):
             self.plot(data)
 
     def save(self, show=True):
-        plt.savefig(self.filepath)
+        plt.savefig(self.filepath, transparent=True)
         if show:
             plt.show()
         else:
