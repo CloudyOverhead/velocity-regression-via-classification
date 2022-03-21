@@ -124,7 +124,9 @@ class RCNN2DRegressor(RCNN2D):
     ):
         input_shape = input_shape[1:]
         Conv = Conv3D if not transpose else Conv3DTranspose
-        input = Input(shape=input_shape, batch_size=batch_size, dtype=input_dtype)
+        input = Input(
+            shape=input_shape, batch_size=batch_size, dtype=input_dtype,
+        )
 
         encoder = Sequential(name=name)
         encoder.add(input)
@@ -132,7 +134,10 @@ class RCNN2DRegressor(RCNN2D):
             kernels, qties_filters, dilation_rates,
         ):
             conv = Conv(
-                qty_filters, kernel, dilation_rate=dilation_rate, padding='same',
+                qty_filters,
+                kernel,
+                dilation_rate=dilation_rate,
+                padding='same',
             )
             encoder.add(conv)
             encoder.add(ReLU())
@@ -150,7 +155,10 @@ class RCNN2DRegressor(RCNN2D):
         data_stream = reshape(
             data_stream, [batches*shots, timesteps, filter_dim],
         )
-        lstm = Bidirectional(LSTM(units, return_sequences=True), merge_mode='ave')
+        lstm = Bidirectional(
+            LSTM(units, return_sequences=True),
+            merge_mode='ave',
+        )
         data_stream = lstm(data_stream)
         data_stream = reshape(
             data_stream, [batches, shots, timesteps, units],
@@ -271,9 +279,7 @@ class RCNN2DClassifier(RCNN2DRegressor):
         return losses, losses_weights
 
 
-
-
-class RCNN2DUnpackReal(RCNN2DClassifier):
+class Unpack(NN):
     def __init__(
         self, input_shapes, params, dataset, checkpoint_dir, devices,
         run_eagerly,
@@ -290,6 +296,7 @@ class RCNN2DUnpackReal(RCNN2DClassifier):
         else:
             self.receptive_field = 31
             self.cmps_per_iter = 2*self.receptive_field - 1
+        self.dbatch = self.cmps_per_iter - 2*(self.receptive_field//2)
 
         input_shapes = {'shotgather': (nt, ng, self.cmps_per_iter, 1)}
         params.batch_size = 1
@@ -302,10 +309,6 @@ class RCNN2DUnpackReal(RCNN2DClassifier):
             input_shapes, params, dataset, checkpoint_dir, devices,
             run_eagerly,
         )
-
-    @property
-    def dbatch(self):
-        return self.cmps_per_iter - 2*(self.receptive_field//2)
 
     def launch_testing(self, tfdataset, savedir):
         if savedir is None:
@@ -349,10 +352,8 @@ class RCNN2DUnpackReal(RCNN2DClassifier):
                     del evaluated[key][-batch_pad:]
             print("Joining slices.")
             evaluated = self.unsplit_predictions(evaluated, qty_cmps)
-            for lbl, out in evaluated.items():
-                evaluated[lbl] = out[..., 0]
 
-            example = filename.numpy().decode("utf-8")
+            example = filename[0]
             exampleid = int(example.split("_")[-1])
             example_evaluated = {
                 lbl: out for lbl, out in evaluated.items()
@@ -399,6 +400,14 @@ class RCNN2DUnpackReal(RCNN2DClassifier):
         for key, pred in predictions.items():
             predictions[key] = np.concatenate(pred, axis=1)
         return predictions
+
+
+class RCNN2DRegressorUnpack(Unpack, RCNN2DRegressor):
+    pass
+
+
+class RCNN2DClassifierUnpack(Unpack, RCNN2DClassifier):
+    pass
 
 
 class Hyperparameters(Hyperparameters):
