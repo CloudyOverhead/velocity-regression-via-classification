@@ -11,6 +11,8 @@ from ModelGenerator import (
     Sequence as GeoSequence, Stratigraphy, Deformation, Property, Lithology,
 )
 from tensorflow.keras.utils import Sequence
+from tensorflow.python.data.util import options as options_lib
+from tensorflow.data.experimental import DistributeOptions, AutoShardPolicy
 from GeoFlow.GeoDataset import GeoDataset
 from GeoFlow.EarthModel import MarineModel
 from GeoFlow.SeismicGenerator import Acquisition
@@ -20,6 +22,15 @@ from GeoFlow.GraphIO import (
 
 EXPECTED_WIDTH = 1
 NS = 2182
+
+
+DistributeOptions.auto_shard_policy = options_lib.create_option(
+    name="auto_shard_policy",
+    ty=AutoShardPolicy,
+    docstring="The type of sharding to use. See "
+    "`tf.data.experimental.AutoShardPolicy` for additional information.",
+    default_factory=lambda: AutoShardPolicy.DATA,
+)
 
 
 class Dataset(GeoDataset, Sequence):
