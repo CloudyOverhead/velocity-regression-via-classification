@@ -232,32 +232,6 @@ class Article2D(Article1D):
         return model, acquire, inputs, outputs
 
 
-class AnalysisProgressiveNoise(Article1D):
-    name = "Article1D"
-
-    def set_dataset(self):
-        model, acquire, inputs, outputs = super().set_dataset()
-        for input in inputs.values():
-            input.preprocess = self.add_noise_to_preprocess(input.preprocess)
-        return model, acquire, inputs, outputs
-
-    def add_noise_to_preprocess(self, preprocess):
-        def preprocess_with_noise(data, labels):
-            data = preprocess(data, labels)
-            data += self.generate_noise(data)
-            return data
-        return preprocess_with_noise
-
-    def generate_noise(self, data):
-        rms = np.sqrt(np.mean(data**2))
-        noise = np.random.normal(loc=0, scale=rms, size=data.shape)
-        t = np.linspace(0, 1, len(noise))
-        while t.ndim != noise.ndim:
-            t = t[..., None]
-        noise *= t
-        return noise
-
-
 class USGS(Article2D):
     def set_dataset(self):
         model, acquire, inputs, outputs = super().set_dataset()
