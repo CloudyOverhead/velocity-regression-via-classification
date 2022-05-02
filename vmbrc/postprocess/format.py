@@ -5,14 +5,19 @@
 from matplotlib import pyplot as plt
 from matplotlib.ticker import AutoLocator
 import proplot as pplt
+import numpy as np
 
 
 class FuncScale(pplt.FuncScale):
-    def __init__(self, *, a=1, b=0):
+    def __init__(self, *, a=1, b=0, decimals=None):
+        def major_formatter(x, _):
+            y = a*x + b
+            return y if decimals is None else np.around(y, decimals=decimals)
+
         super().__init__(
             transform=lambda x: x,
             major_locator=FuncLocator(a=a, b=b),
-            major_formatter=lambda x, _: a*x + b,
+            major_formatter=major_formatter,
         )
 
 
