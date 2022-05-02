@@ -25,8 +25,9 @@ COLOR_CYCLE = pplt.Cycle(color=COLOR_CYCLE)
 
 
 params = Hyperparameters1D(is_training=False)
+params.batch_size = 2
 statistics = Statistics.construct(
-    nn=RCNN2DRegressor,
+    nn=RCNN2DClassifier,
     dataset=Article1D(params),
     savedir="Classifier",
 )
@@ -113,7 +114,7 @@ class CompareSTD(Figure):
 
         fig, axs = pplt.subplots(
             nrows=1,
-            ncols=5,
+            ncols=6,
             figsize=[7.6, 6],
             sharey=True,
             sharex=True,
@@ -124,31 +125,34 @@ class CompareSTD(Figure):
         y = np.arange(nt)
 
         ax = axs[0]
-        ax.set_title("Ground truth")
         d = data['SelectExample_Article1D_Regressor_50']
         label = d['labels/vint']
         label, _ = meta_output.postprocess(label)
         ax.plot(label, y)
 
         ax = axs[1]
-        ax.set_title("Single classifier")
         d = data['SelectExample_Article1D_Classifier_0_50']
         self.plot_std_classifier(ax, d)
 
         ax = axs[2]
-        ax.set_title("All classifiers")
         with pplt.rc.context({'axes.prop_cycle': COLOR_CYCLE}):
             for i in range(16):
                 d = data[f'SelectExample_Article1D_Classifier_{i}_50']
-                self.plot_std_classifier(ax, d, alpha_std=.2, show_prob=False)
+                self.plot_std_classifier(ax, d, alpha_std=.0, show_prob=False)
 
         ax = axs[3]
-        ax.set_title("Average of\nall classifiers")
+        with pplt.rc.context({'axes.prop_cycle': COLOR_CYCLE}):
+            for i in range(16):
+                d = data[f'SelectExample_Article1D_Classifier_{i}_50']
+                self.plot_std_classifier(
+                    ax, d, alpha_median=.0, alpha_std=.2, show_prob=False,
+                )
+
+        ax = axs[4]
         d = data['SelectExample_Article1D_Classifier_50']
         self.plot_std_classifier(ax, d)
 
-        ax = axs[4]
-        ax.set_title("Average of\nall regressors")
+        ax = axs[5]
         d = data['SelectExample_Article1D_Regressor_50']
         v = d['preds/vint']
         v = v[:, 0, :, 0]
@@ -169,17 +173,19 @@ class CompareSTD(Figure):
             loc='r',
         )
         axs.format(
-            # abc='(a)',
+            abc='(a)',
             xlabel="Interval velocity (m/s)",
             ylabel="Time (s)",
             xlim=[vmin, vmax],
             ylim=[y_start, nt],
-            yscale=pplt.FuncScale(a=dt),
+            yscale=pplt.FuncScale(a=dt, decimals=2),
         )
         for ax in axs:
             ax.format(yreverse=True)
 
-    def plot_std_classifier(self, ax, data, alpha_std=.5, show_prob=True):
+    def plot_std_classifier(
+        self, ax, data, alpha_median=1., alpha_std=.5, show_prob=True,
+    ):
         meta_output = dataset.outputs['vint']
         vmin, vmax = dataset.model.properties['vp']
         nt = dataset.acquire.NT // dataset.acquire.resampling
@@ -198,7 +204,7 @@ class CompareSTD(Figure):
                 vmax=0
             )
         median, std = meta_output.postprocess(p)
-        line = ax.plot(median, y, lw=2)
+        line = ax.plot(median, y, lw=2, alpha=alpha_median)
         color = line[0].get_color()
         ax.plot(median-std, y, alpha=alpha_std, lw=1, c=color)
         ax.plot(median+std, y, alpha=alpha_std, lw=1, c=color)
