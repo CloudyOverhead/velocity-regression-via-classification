@@ -393,7 +393,8 @@ class Vrms(Vrms):
         vmax=None, clip=1, ims=None, std_min=None, std_max=None,
     ):
         max_, std = data
-        weights = weights[..., 0, 0]
+        if weights is not None:
+            weights = weights[..., 0, 0]
 
         ims = super().plot(max_, weights, axs, cmap, vmin, vmax, clip, ims)
 
@@ -410,11 +411,11 @@ class Vrms(Vrms):
         return ims
 
     def postprocess(self, output):
-        max_, std = self.reduce(output)
+        median, std = self.reduce(output)
         vmin, vmax = self.model.properties["vp"]
-        max_ = max_*(vmax-vmin) + vmin
+        median = median*(vmax-vmin) + vmin
         std = std * (vmax-vmin)
-        return max_, std
+        return median, std
 
     def reduce(self, output):
         if output.ndim > 2 and output.shape[2] > 1:
@@ -426,16 +427,16 @@ class Vrms(Vrms):
             bins = np.mean([bins[:-1], bins[1:]], axis=0)
             v = np.zeros_like(prob)
             v[:] = bins[None, None]
-            max_ = bins[np.argmax(prob, axis=-1)]
+            median = weighted_median(v, weights=prob, axis=-1)
             mean = np.average(v, weights=prob, axis=-1)
             var = np.average((v-mean[..., None])**2, weights=prob, axis=-1)
             std = np.sqrt(var)
         else:
-            max_ = output
-            while max_.ndim > 2:
-                max_ = max_[..., 0]
-            std = np.zeros_like(max_)
-        return max_, std
+            median = output
+            while median.ndim > 2:
+                median = median[..., 0]
+            std = np.zeros_like(median)
+        return median, std
 
 
 class Vint(Vrms, Vint):
@@ -454,3 +455,17 @@ class ShotGather(ShotGather):
         if data.shape[2] == 1 and weights is not None:
             weights = np.repeat(weights, data.shape[1], axis=1)
         return super().plot(data, weights, axs, cmap, vmin, vmax, clip, ims)
+
+
+def weighted_median(array, weights, axis):
+    weights /= np.sum(weights, axis=axis, keepdims=True)
+    weights = np.cumsum(weights, axis=axis)
+    weights = np.moveaxis(weights, axis, 0)
+    len_axis, *source_shape = weights.shape
+    weights = weights.reshape([len_axis, -1])
+    median_idx = [np.searchsorted(w, .5) for w in weights.T]
+    array = np.moveaxis(array, axis, 0)
+    array = array.reshape([len_axis, -1]).T
+    median = array[np.arange(len(array)), median_idx]
+    median = median.reshape(source_shape)
+    return median
