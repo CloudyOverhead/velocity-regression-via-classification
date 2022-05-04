@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
 
-from os.path import abspath, join, split
+from os.path import abspath, join
 from glob import glob
-from itertools import chain, cycle
-from copy import copy
+from itertools import cycle
+from copy import copy, deepcopy
 
 import numpy as np
 from scipy.signal import convolve
 from ModelGenerator import (
     Sequence as GeoSequence, Stratigraphy, Deformation, Property, Lithology,
+    Diapir, ModelGenerator,
 )
 from tensorflow.keras.utils import Sequence
 from tensorflow.python.data.util import options as options_lib
@@ -17,7 +18,7 @@ from GeoFlow.GeoDataset import GeoDataset
 from GeoFlow.EarthModel import MarineModel
 from GeoFlow.SeismicGenerator import Acquisition
 from GeoFlow.GraphIO import (
-    Reftime, Vrms, Vint, Vdepth, ShotGather, GraphOutput,
+    Reftime, Vrms, Vint, Vdepth, ShotGather,
 )
 
 EXPECTED_WIDTH = 1
@@ -217,6 +218,78 @@ class Article2D(Article1D):
         for output in outputs.values():
             input.train_on_shots = False
 
+        return model, acquire, inputs, outputs
+
+
+class Analysis(Article1D):
+    @property
+    def testsize(self):
+        return len(self.model.flat_features())
+
+    @testsize.setter
+    def testsize(self, value):
+        pass
+
+    def set_dataset(self):
+        model, acquire, inputs, outputs = super().set_dataset()
+
+        self.trainsize = 0
+        self.validatesize = 0
+
+        self.add_grid_sampler(model)
+        model.NX = int(2*acquire.gmax-acquire.gmin/2) + 2*acquire.Npad
+        model.layer_num_min = 1
+        model.layer_dh_min = 499
+        model.layer_dh_max = 500
+        model.water_vmin = 1499
+        model.water_vmax = 1500
+        model.water_dmin = 1.499 * model.water_vmin
+        model.water_dmax = 1.500 * model.water_vmax
+        model.dip_0 = False
+
+        acquire.singleshot = False
+
+        for input in inputs.values():
+            input.train_on_shots = False
+        for output in outputs.values():
+            input.train_on_shots = False
+
+        return model, acquire, inputs, outputs
+
+    def add_grid_sampler(self, model):
+        def flat_features():
+            features = np.meshgrid(*(f for f in model.features.values()))
+            features = np.moveaxis(features, 0, -1)
+            return features.reshape([-1, features.shape[-1]])
+
+        def generate_model(seed=None):
+            alt_model = deepcopy(model)
+            if seed is None:
+                seed = np.random.randint(len(alt_model.flat_features()))
+            features = alt_model.flat_features()[seed]
+            for name, feature in zip(alt_model.features.keys(), features):
+                setattr(alt_model, name+'_min', feature)
+                setattr(alt_model, name+'_max', feature)
+            thicks = [alt_model.NZ // 2] * 2
+            dips = [0, alt_model.dip_max]
+            if hasattr(self, 'add_diapir_to_stratigraphy'):
+                self.add_diapir_to_stratigraphy(alt_model)
+            return ModelGenerator.generate_model(
+                alt_model,
+                stratigraphy=alt_model.strati,
+                thicks=thicks,
+                dips=dips,
+                seed=0,
+            )
+
+        model.flat_features = flat_features
+        model.generate_model = generate_model
+
+
+class AnalysisDip(Analysis):
+    def set_dataset(self):
+        model, acquire, inputs, outputs = super().set_dataset()
+        model.features = {'dip': [0, 15, 30, 45, 60, 75]}
         return model, acquire, inputs, outputs
 
 
