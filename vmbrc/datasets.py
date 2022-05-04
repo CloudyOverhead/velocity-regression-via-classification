@@ -212,22 +212,10 @@ class Article2D(Article1D):
 
         acquire.singleshot = False
 
-        inputs = {
-            ShotGather.name: ShotGather(model=model, acquire=acquire)
-        }
-        bins = self.params.decode_bins
-        outputs = {
-            Reftime.name: Reftime(model=model, acquire=acquire),
-            Vrms.name: Vrms(model=model, acquire=acquire, bins=bins),
-            Vint.name: Vint(model=model, acquire=acquire, bins=bins),
-            Vdepth.name: Vdepth(model=model, acquire=acquire, bins=bins),
-        }
         for input in inputs.values():
             input.train_on_shots = False
-            input.mute_dir = True
         for output in outputs.values():
             input.train_on_shots = False
-            output.identify_direct = False
 
         return model, acquire, inputs, outputs
 
@@ -331,7 +319,18 @@ class MarineModel(MarineModel):
                 self.layer_dh_max = 50
         else:
             self.layer_num_min = 50
-        return super().generate_model(*args, seed=seed, **kwargs)
+
+        props, layerids, layers = super().generate_model(
+            *args, seed=seed, **kwargs,
+        )
+
+        source_depth = self.acquire.source_depth
+        dh = self.model.dh
+        water_top = int(source_depth / dh * 2)
+        vp = props['vp']
+        water_v = vp[0, vp.shape[1] // 2]
+        props['vp'][:water_top] = water_v
+        return props, layerids, layers
 
     def build_stratigraphy(self):
         self.thick0min = int(self.water_dmin/self.dh)
