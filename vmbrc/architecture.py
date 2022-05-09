@@ -155,10 +155,7 @@ class RCNN2DRegressor(RCNN2D):
         data_stream = reshape(
             data_stream, [batches*shots, timesteps, filter_dim],
         )
-        lstm = Bidirectional(
-            LSTM(units, return_sequences=True),
-            merge_mode='ave',
-        )
+        lstm = LSTM(units, return_sequences=True)
         data_stream = lstm(data_stream)
         data_stream = reshape(
             data_stream, [batches, shots, timesteps, units],
