@@ -73,6 +73,7 @@ class Predictions(Metadata):
                 plot=False,
                 debug=False,
                 eager=False,
+                workdirs=None,
             )
             global_main(current_args)
         end_time = str(datetime.now())
