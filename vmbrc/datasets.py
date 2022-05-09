@@ -274,13 +274,22 @@ class Analysis(Article1D):
             dips = [0, alt_model.dip_max]
             if hasattr(self, 'add_diapir_to_stratigraphy'):
                 self.add_diapir_to_stratigraphy(alt_model)
-            return ModelGenerator.generate_model(
+
+            props, layerids, layers = ModelGenerator.generate_model(
                 alt_model,
                 stratigraphy=alt_model.strati,
                 thicks=thicks,
                 dips=dips,
                 seed=0,
             )
+
+            source_depth = self.acquire.source_depth
+            dh = self.model.dh
+            water_top = int(source_depth / dh * 2)
+            vp = props['vp']
+            water_v = vp[0, vp.shape[1] // 2]
+            props['vp'][:water_top] = water_v
+            return props, layerids, layers
 
         model.flat_features = flat_features
         model.generate_model = generate_model
@@ -392,18 +401,9 @@ class MarineModel(MarineModel):
                 self.layer_dh_max = 50
         else:
             self.layer_num_min = 50
-
-        props, layerids, layers = super().generate_model(
+        return super().generate_model(
             *args, seed=seed, **kwargs,
         )
-
-        source_depth = self.acquire.source_depth
-        dh = self.model.dh
-        water_top = int(source_depth / dh * 2)
-        vp = props['vp']
-        water_v = vp[0, vp.shape[1] // 2]
-        props['vp'][:water_top] = water_v
-        return props, layerids, layers
 
     def build_stratigraphy(self):
         self.thick0min = int(self.water_dmin/self.dh)
