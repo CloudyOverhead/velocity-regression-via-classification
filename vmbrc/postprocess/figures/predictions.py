@@ -19,8 +19,8 @@ TOOUTPUTS = ['ref', 'vrms', 'vint', 'vdepth']
 class Predictions(Metadata):
     @classmethod
     def construct(
-        cls, *, nn, params, logdir, savedir, dataset, do_generate=False,
-        unique_suffix=None,
+        cls, *, nn, params, logdir, savedir, dataset,
+        do_generate_dataset=False, unique_suffix=None,
     ):
         name = cls.__name__ + '_' + nn.__name__
         if unique_suffix is not None:
@@ -33,7 +33,7 @@ class Predictions(Metadata):
             savedir = nn.__name__
         cls.savedir = savedir
         cls.dataset = dataset
-        cls.generate = do_generate
+        cls.generate_dataset = do_generate_dataset
         return cls
 
     def generate(self, gpus):
@@ -65,7 +65,7 @@ class Predictions(Metadata):
                 params=params,
                 dataset=dataset,
                 logdir=current_logdir,
-                generate=self.generate,
+                generate=self.generate_dataset,
                 train=False,
                 test=True,
                 gpus=gpus,
