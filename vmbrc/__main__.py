@@ -2,6 +2,7 @@
 """Launch dataset generation, training or testing."""
 
 from GeoFlow.__main__ import main, parser
+parser.set_defaults(params='Hyperparameters1D')
 
 
 def parse_args():
