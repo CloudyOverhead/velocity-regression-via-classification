@@ -434,8 +434,8 @@ class Hyperparameters1D(Hyperparameters):
             self.epochs = (10, 20, 10)
             self.loss_scales = (
                 {'ref': .4, 'vrms': .5, 'vint': .1, 'vdepth': .0},
-                {'ref': .1, 'vrms': .6, 'vint': .2, 'vdepth': .0},
-                {'ref': .1, 'vrms': .2, 'vint': .4, 'vdepth': .1},
+                {'ref': .1, 'vrms': .7, 'vint': .2, 'vdepth': .0},
+                {'ref': .1, 'vrms': .2, 'vint': .6, 'vdepth': .1},
             )
 
 
