@@ -53,7 +53,7 @@ class AnalyzeDip(Figure):
             wratios=(2, 1)*ncols,
             figsize=[3.3, 6],
             sharey=True,
-            # sharex=False,
+            spanx=False,
         )
         if ncols > 1:
             gt_axs = axs[:, 0::2]
