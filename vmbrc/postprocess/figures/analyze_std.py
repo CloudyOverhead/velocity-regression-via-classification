@@ -29,23 +29,15 @@ def map_cmap(cmap, vmin, vmax):
     return ScalarMappable(Normalize(vmin, vmax), cmap)
 
 
-class AnalyzeDip(Figure):
-    dataset = AnalysisDip(PARAMS)
-    Metadata = Predictions.construct(
-        nn=RCNN2DClassifier,
-        params=PARAMS,
-        logdir=LOGDIR,
-        savedir=SAVEDIR,
-        dataset=dataset,
-        do_generate_dataset=True,
-    )
-
+class Analyze(Figure):
     def plot(self, data):
         dataset = self.dataset
         features = dataset.model.features
         nrows, *ncols = (len(values) for values in features.values())
         if not ncols:
             ncols = 1
+        else:
+            ncols = ncols[0]
 
         fig, axs = pplt.subplots(
             nrows=nrows,
@@ -55,11 +47,8 @@ class AnalyzeDip(Figure):
             sharey=True,
             spanx=False,
         )
-        if ncols > 1:
-            gt_axs = axs[:, 0::2]
-        else:
-            gt_axs = axs[:, 0]
-        p_axs = axs[:, 1::2]
+        g_axs = [axs[i, j] for j in range(0, ncols*2, 2) for i in range(nrows)]
+        p_axs = [axs[i, j] for j in range(1, ncols*2, 2) for i in range(nrows)]
 
         meta = dataset.outputs['vint']
         vmin, vmax = dataset.model.properties['vp']
@@ -70,20 +59,20 @@ class AnalyzeDip(Figure):
         _, labels_1d, _, preds = read_all(dataset, SAVEDIR)
         labels_1d = labels_1d['vint']
         preds = preds['vint']
-        for i, (gt_ax, label_1d, p_ax, pred) in enumerate(
-            zip(gt_axs, labels_1d, p_axs, preds)
+        for i, (g_ax, label_1d, p_ax, pred) in enumerate(
+            zip(g_axs, labels_1d, p_axs, preds)
         ):
             pred = pred[:, [-1]]
             label_1d = label_1d[:, [-1]]
             label_2d = self.get_2d_label(i)
-            gt_ax.imshow(label_2d, aspect='auto', cmap=CMAP)
+            g_ax.imshow(label_2d, aspect='auto', cmap=CMAP)
             label_1d, _ = meta.postprocess(label_1d)
             p_ax.plot(label_1d, y)
             self.plot_std_classifier(p_ax, pred)
 
         ticks = self.get_2d_label(0)[[0, -1], 0]
         ticks = [int(np.around(v, -2)) for v in ticks]
-        dv = (ticks[1] - ticks[0]) / 2
+        dv = (ticks[1]-ticks[0]) / 2
 
         axs[0, -1].colorbar(
             map_cmap(CMAP, ticks[0]-dv, ticks[1]+dv),
@@ -101,16 +90,20 @@ class AnalyzeDip(Figure):
             ylabel="Time (s)",
             yscale=pplt.FuncScale(a=dt),
         )
-        p_axs.format(
-            xlabel="Interval\nvelocity\n(m/s)",
-            xlim=[vmin, vmax],
-        )
-        gt_axs.format(
-            xlabel="x (km)",
-            xscale=pplt.FuncScale(a=dataset.model.dh/1000),
-        )
+        for ax in p_axs:
+            ax.format(
+                xlabel="Interval\nvelocity\n(m/s)",
+                xlim=[vmin, vmax],
+            )
+        for ax in g_axs:
+            ax.format(
+                xlabel="x (km)",
+                xscale=pplt.FuncScale(a=dataset.model.dh/1000),
+            )
         for ax in axs:
             ax.format(yreverse=True)
+
+        return axs
 
     def get_2d_label(self, seed):
         dataset = self.dataset
@@ -156,5 +149,53 @@ class AnalyzeDip(Figure):
         ax.plot(median+std, y, alpha=alpha_std, lw=1, c=color)
 
 
-for figure in [AnalyzeDip]:
+class AnalyzeDip(Analyze):
+    dataset = AnalysisDip(PARAMS)
+    Metadata = Predictions.construct(
+        nn=RCNN2DClassifier,
+        params=PARAMS,
+        logdir=LOGDIR,
+        savedir=SAVEDIR,
+        dataset=dataset,
+        do_generate_dataset=True,
+        unique_suffix='dip',
+    )
+
+
+class AnalyzeFault(Analyze):
+    dataset = AnalysisFault(PARAMS)
+    Metadata = Predictions.construct(
+        nn=RCNN2DClassifier,
+        params=PARAMS,
+        logdir=LOGDIR,
+        savedir=SAVEDIR,
+        dataset=dataset,
+        do_generate_dataset=True,
+        unique_suffix='fault',
+    )
+
+    def plot(self, *args, **kwargs):
+        axs = super().plot(*args, **kwargs)
+        for ax in axs[:2]:
+            ax.set_visible(False)
+            ax.number = 100
+        for i, ax in enumerate(axs[2:]):
+            ax.number = i + 1
+
+
+class AnalyzeDiapir(Analyze):
+    dataset = AnalysisDiapir(PARAMS)
+    Metadata = Predictions.construct(
+        nn=RCNN2DClassifier,
+        params=PARAMS,
+        logdir=LOGDIR,
+        savedir=SAVEDIR,
+        dataset=dataset,
+        do_generate_dataset=True,
+        unique_suffix='diapir',
+    )
+
+
+
+for figure in [AnalyzeDip, AnalyzeFault, AnalyzeDiapir, AnalyzeNoise]:
     catalog.register(figure)

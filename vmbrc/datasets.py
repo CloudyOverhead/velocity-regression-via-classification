@@ -302,6 +302,52 @@ class AnalysisDip(Analysis):
         return model, acquire, inputs, outputs
 
 
+class AnalysisFault(Analysis):
+    def set_dataset(self):
+        model, acquire, inputs, outputs = super().set_dataset()
+        model.features = {
+            'fault_dip': [0, 15, 30, 45, 60, 75],
+            'fault_displ': [-500, -1000],
+        }
+        model.fault_x_lim = [int(.5*model.NX), int(.5*model.NX)]
+        model.fault_y_lim = [int(.5*model.NZ), int(.5*model.NZ)]
+        model.fault_nmax = 1
+        model.fault_prob = 1
+        return model, acquire, inputs, outputs
+
+
+class AnalysisDiapir(Analysis):
+    def set_dataset(self):
+        model, acquire, inputs, outputs = super().set_dataset()
+
+        model.features = {
+            'diapir_height': [100, 200],
+            'diapir_width': [100, 200],
+        }
+
+        return model, acquire, inputs, outputs
+
+    def add_diapir_to_stratigraphy(self, model):
+        strati = model.strati
+        properties = [p for p in strati.sequences[-1].lithologies[-1]]
+        salt = Property(name=properties[0].name, vmin=4500, vmax=4500)
+        properties[0] = salt
+        diapir = Diapir(
+            properties=properties,
+            height_min=model.diapir_height_min,
+            height_max=model.diapir_height_max,
+            width_min=model.diapir_width_min,
+            width_max=model.diapir_width_max,
+            prob=1,
+        )
+        sequences = [
+            strati.sequences[0],
+            GeoSequence(thick_min=1E9-1, lithologies=[diapir])
+        ]
+        strati = Stratigraphy(sequences)
+        model._strati, model._properties = strati, strati.properties()
+
+
 class USGS(Article2D):
     def set_dataset(self):
         model, acquire, inputs, outputs = super().set_dataset()
