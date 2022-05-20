@@ -20,6 +20,7 @@ from GeoFlow.SeismicGenerator import Acquisition
 from GeoFlow.GraphIO import (
     Reftime, Vrms, Vint, Vdepth, ShotGather,
 )
+from natsort import natsorted as sorted
 
 EXPECTED_WIDTH = 1
 NS = 2182
@@ -88,7 +89,7 @@ class Dataset(GeoDataset, Sequence):
             "test": self.datatest,
         }
         pathstr = join(phases[phase], 'example_*')
-        self.files[self.phase] = glob(pathstr)
+        self.files[self.phase] = sorted(glob(pathstr))
 
         if shuffle:
             np.random.shuffle(self.files[self.phase])
@@ -133,7 +134,9 @@ class Dataset(GeoDataset, Sequence):
                 replace=False,
             )
         else:
-            self.batches_idx.reshape([len(self), self.batch_size])
+            self.batches_idx = self.batches_idx.reshape(
+                [len(self), self.batch_size]
+            )
 
 
 class Article1D(Dataset):
