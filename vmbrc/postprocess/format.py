@@ -12,7 +12,11 @@ class FuncScale(pplt.FuncScale):
     def __init__(self, *, a=1, b=0, decimals=None):
         def major_formatter(x, _):
             y = a*x + b
-            return y if decimals is None else np.around(y, decimals=decimals)
+            if decimals is not None:
+                y = np.around(y, decimals=decimals)
+                if decimals <= 0:
+                    y = y.astype(int)
+            return y
 
         super().__init__(
             transform=lambda x: x,
