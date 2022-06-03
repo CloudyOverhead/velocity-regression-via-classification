@@ -250,14 +250,14 @@ def read_all(dataset, savedir=None, toinputs=TOINPUTS, tooutputs=TOOUTPUTS):
     all_preds = {}
     dataset._getfilelist()
     for example in dataset.files["test"]:
-        inputs, labels, weights, filename = dataset.get_example(
+        inputs, labels, weights, _ = dataset.get_example(
             example,
             phase='test',
             toinputs=toinputs,
             tooutputs=tooutputs,
         )
         if savedir is not None:
-            preds = dataset.generator.read_predictions(filename, savedir)
+            preds = dataset.generator.read_predictions(example, savedir)
         else:
             preds = {}
         target_dicts = [all_inputs, all_labels, all_weights, all_preds]

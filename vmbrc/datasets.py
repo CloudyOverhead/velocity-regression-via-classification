@@ -351,6 +351,80 @@ class AnalysisDiapir(Analysis):
         model._strati, model._properties = strati, strati.properties()
 
 
+class AnalysisNoise(Article1D):
+    name = "Article1D"
+    scales = [.5, 1., 1.5, 2.]
+
+    def set_dataset(self):
+        model, acquire, inputs, outputs = super().set_dataset()
+        self.testsize = len(self.scales)
+        return model, acquire, inputs, outputs
+
+    def get_example(
+        self, filename=None, phase="test", shuffle=False, toinputs=None,
+        tooutputs=None,
+    ):
+        if filename is None:
+            do_reset_iterator = (
+                not hasattr(self, "iter_examples")
+                or not self.files[self.phase]
+            )
+            if do_reset_iterator:
+                self.tfdataset(phase, shuffle, tooutputs, toinputs)
+            filename = next(self.iter_examples)
+
+        *head, i = filename.split('_')
+        i = int(i) - self.trainsize
+        if 0 <= i < len(self.scales):
+            scale = self.scales[i]
+        else:
+            scale = 0
+
+        filename = '_'.join([*head, str(self.trainsize)])
+        filename.replace('train', 'test')
+
+        inputspre, labelspre, weightspre, _ = super().get_example(
+            filename=filename,
+            phase='test',
+            shuffle=False,
+            toinputs=toinputs,
+            tooutputs=tooutputs,
+        )
+
+        noise = self.generate_noise(inputspre['shotgather'], scale)
+        inputspre['shotgather'] += noise
+
+        return inputspre, labelspre, weightspre, filename
+
+    def generate_noise(self, data, scale):
+        rms = np.sqrt(np.mean(data**2))
+        noise = np.random.normal(loc=0, scale=scale*rms, size=data.shape)
+        return noise
+
+    def decimate_files(self):
+        for phase in ['train', 'validate', 'test']:
+            self.files[phase] = self.files[phase][:len(self.scales)]
+
+    def _getfilelist(self, *args, **kwargs):
+        super()._getfilelist(*args, **kwargs)
+        self.decimate_files()
+
+    def tfdataset(
+        self, phase="train", shuffle=False, tooutputs=None, toinputs=None,
+        batch_size=1,
+    ):
+        dataset = super().tfdataset(
+            phase=phase,
+            shuffle=shuffle,
+            tooutputs=tooutputs,
+            toinputs=toinputs,
+            batch_size=batch_size,
+        )
+        dataset.decimate_files()
+        dataset.on_batch_end()
+        return copy(dataset)
+
+
 class USGS(Article2D):
     def set_dataset(self):
         model, acquire, inputs, outputs = super().set_dataset()

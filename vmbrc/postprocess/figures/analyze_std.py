@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from os.path import join
+from os.path import join, curdir
 
 import numpy as np
 import proplot as pplt
@@ -12,7 +12,7 @@ from vmbrc.datasets import (
     AnalysisDip, AnalysisFault, AnalysisDiapir, AnalysisNoise,
 )
 from vmbrc.architecture import RCNN2DClassifier, Hyperparameters1D
-from ..catalog import catalog, Figure, CompoundMetadata
+from ..catalog import catalog, Figure
 from .predictions import Predictions, read_all
 
 TOINPUTS = ['shotgather']
@@ -22,14 +22,15 @@ PARAMS.batch_size = 1
 LOGDIR = join('logs', 'classifier', '0')
 SAVEDIR = "Classifier_0"
 
-CMAP = pplt.DiscreteColormap(('tan', 'brown'))
-
 
 def map_cmap(cmap, vmin, vmax):
     return ScalarMappable(Normalize(vmin, vmax), cmap)
 
 
 class Analyze(Figure):
+    G_CMAP = pplt.DiscreteColormap(('tan', 'brown'))
+    SAVEDIR = SAVEDIR
+
     def plot(self, data):
         dataset = self.dataset
         features = dataset.model.features
@@ -42,7 +43,6 @@ class Analyze(Figure):
         fig, axs = pplt.subplots(
             nrows=nrows,
             ncols=ncols*2,
-            wratios=(2, 1)*ncols,
             figsize=[3.3, 6],
             sharey=True,
             spanx=False,
@@ -56,7 +56,7 @@ class Analyze(Figure):
         dt = dataset.acquire.dt * dataset.acquire.resampling
         y = np.arange(nt)
 
-        _, labels_1d, _, preds = read_all(dataset, SAVEDIR)
+        _, labels_1d, _, preds = read_all(dataset, self.SAVEDIR)
         labels_1d = labels_1d['vint']
         preds = preds['vint']
         for i, (g_ax, label_1d, p_ax, pred) in enumerate(
@@ -65,29 +65,15 @@ class Analyze(Figure):
             pred = pred[:, [-1]]
             label_1d = label_1d[:, [-1]]
             label_2d = self.get_2d_label(i)
-            g_ax.imshow(label_2d, aspect='auto', cmap=CMAP)
+            g_ax.imshow(label_2d, aspect='auto', cmap=self.G_CMAP)
             label_1d, _ = meta.postprocess(label_1d)
             p_ax.plot(label_1d, y)
             self.plot_std_classifier(p_ax, pred)
 
-        ticks = self.get_2d_label(0)[[0, -1], 0]
-        ticks = [int(np.around(v, -2)) for v in ticks]
-        dv = (ticks[1]-ticks[0]) / 2
-
-        axs[0, -1].colorbar(
-            map_cmap(CMAP, ticks[0]-dv, ticks[1]+dv),
-            ticks=ticks,
-            label="Interval\nvelocity (m/s)",
-            loc='r',
-        )
-        axs[1, -1].colorbar(
-            axs[0, 1].images[0],
-            label="Logarithmic\nprobability\n$\\mathrm{log}(p)$ (―)",
-            loc='r',
-        )
+        self.add_colorbars(fig, axs)
         axs.format(
             abc='(a)',
-            ylabel="Time (s)",
+            ylabel="$t$ (s)",
             yscale=pplt.FuncScale(a=dt),
         )
         for ax in p_axs:
@@ -97,19 +83,19 @@ class Analyze(Figure):
             )
         for ax in g_axs:
             ax.format(
-                xlabel="x (km)",
+                xlabel="$x$ (km)",
                 xscale=pplt.FuncScale(a=dataset.model.dh/1000),
             )
         for ax in axs:
             ax.format(yreverse=True)
 
-        return axs
+        return fig, axs
 
     def get_2d_label(self, seed):
         dataset = self.dataset
         acquire = dataset.acquire
         model = dataset.model
-        props_2d, _, _ = model.generate_model(seed)
+        props_2d, _, _ = model.generate_model(seed=seed)
         vp = props_2d["vp"]
         vint = np.zeros((acquire.NT, vp.shape[1]))
         z0 = int(acquire.source_depth / model.dh)
@@ -148,6 +134,25 @@ class Analyze(Figure):
         ax.plot(median-std, y, alpha=alpha_std, lw=1, c=color)
         ax.plot(median+std, y, alpha=alpha_std, lw=1, c=color)
 
+    def add_colorbars(self, fig, axs):
+        ticks = self.get_2d_label(0)[[0, -1], 0]
+        ticks = [int(np.around(v, -2)) for v in ticks]
+        dv = (ticks[1]-ticks[0]) / 2
+
+        fig.colorbar(
+            map_cmap(self.G_CMAP, ticks[0]-dv, ticks[1]+dv),
+            ticks=ticks,
+            label="Interval\nvelocity (m/s)",
+            loc='r',
+            row=1,
+        )
+        fig.colorbar(
+            axs[0, 1].images[0],
+            label="Logarithmic\nprobability\n$\\mathrm{log}(p)$ (―)",
+            loc='r',
+            row=2,
+        )
+
 
 class AnalyzeDip(Analyze):
     dataset = AnalysisDip(PARAMS)
@@ -175,7 +180,7 @@ class AnalyzeFault(Analyze):
     )
 
     def plot(self, *args, **kwargs):
-        axs = super().plot(*args, **kwargs)
+        fig, axs = super().plot(*args, **kwargs)
         for ax in axs[:2]:
             ax.set_visible(False)
             ax.number = 100
@@ -195,6 +200,59 @@ class AnalyzeDiapir(Analyze):
         unique_suffix='diapir',
     )
 
+
+class AnalyzeNoise(Analyze):
+    G_CMAP = 'Greys'
+    SAVEDIR = "Noise"
+
+    dataset = AnalysisNoise(PARAMS)
+    Metadata = Predictions.construct(
+        nn=RCNN2DClassifier,
+        params=PARAMS,
+        logdir=LOGDIR,
+        savedir="Noise",
+        dataset=dataset,
+        unique_suffix='noise',
+    )
+    dataset.model.features = {'scales': dataset.scales}
+
+    def plot(self, data):
+        fig, axs = super().plot(data)
+
+        nrows, ncols = axs.shape
+        ncols //= 2
+        g_axs = [axs[i, j] for j in range(0, ncols*2, 2) for i in range(nrows)]
+
+        dh = self.dataset.model.dh
+        dg = self.dataset.acquire.dg
+        gmin = self.dataset.acquire.gmin
+        for ax in g_axs:
+            ax.format(
+                xlabel="$h$ (m)",
+                xscale=pplt.FuncScale(a=dg*dh, b=gmin*dh, decimals=0),
+            )
+
+        return axs
+
+    def get_2d_label(self, seed):
+        seed += self.dataset.trainsize
+        dataset = self.dataset
+        filename = f'example_{seed}'
+        filename = join(curdir, 'datasets', 'Article1D', 'test', filename)
+        inputspre, _, _, _ = dataset.get_example(
+            filename=filename,
+            phase='test',
+        )
+        shotgather = inputspre['shotgather']
+        return shotgather[..., 0, 0]
+
+    def add_colorbars(self, fig, axs):
+        fig.colorbar(
+            axs[0, 1].images[0],
+            label="Logarithmic\nprobability\n$\\mathrm{log}(p)$ (―)",
+            loc='r',
+            row=1,
+        )
 
 
 for figure in [AnalyzeDip, AnalyzeFault, AnalyzeDiapir, AnalyzeNoise]:
