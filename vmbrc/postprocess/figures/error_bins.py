@@ -39,11 +39,12 @@ CompoundBinsStatistics = CompoundMetadata.combine(
     *(
         Statistics.construct(
             nn=RCNN2DClassifier,
-            savedir=f'Bins_{i}',
+            savedir=f'Bins_{i}{suffix}',
             dataset=Article1D(params),
-            unique_suffix=f"Bins_{i}",
+            unique_suffix=f"Bins_{i}{suffix}",
         )
         for i, params in enumerate(bins_params)
+        for suffix in ['', '_0', '_1']
     )
 )
 
@@ -68,8 +69,23 @@ class ErrorBins(Figure):
             qty_bins,
             line,
             ls=':',
+            label="Average",
+        )
+
+        qty_bins = []
+        scatter = []
+        for i, params in enumerate(bins_params):
+            for j in range(2):
+                key = f"Statistics_RCNN2DClassifier_Bins_{i}_{j}"
+                rmses = data[key]['rmses']
+                qty_bins.append(params.decode_bins)
+                scatter.append(rmses.mean())
+        ax.scatter(
+            qty_bins,
+            scatter,
+            m='o',
             ms=4,
-            label="Achieved by classifier",
+            label="Ensemble",
         )
 
         ax.format(
