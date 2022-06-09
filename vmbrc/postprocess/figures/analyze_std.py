@@ -65,7 +65,13 @@ class Analyze(Figure):
             pred = pred[:, [-1]]
             label_1d = label_1d[:, [-1]]
             label_2d = self.get_2d_label(i)
-            g_ax.imshow(label_2d, aspect='auto', cmap=self.G_CMAP)
+            g_ax.imshow(
+                label_2d,
+                aspect='auto',
+                cmap=self.G_CMAP,
+                vmin=label_2d.min(),
+                vmax=label_2d.max()+.001*abs(label_2d.max()),
+            )
             label_1d, _ = meta.postprocess(label_1d)
             p_ax.plot(label_1d, y)
             self.plot_std_classifier(p_ax, pred)
@@ -189,6 +195,8 @@ class AnalyzeFault(Analyze):
 
 
 class AnalyzeDiapir(Analyze):
+    G_CMAP = pplt.DiscreteColormap(('tan', 'brown'))
+
     dataset = AnalysisDiapir(PARAMS)
     Metadata = Predictions.construct(
         nn=RCNN2DClassifier,
