@@ -22,6 +22,8 @@ from GeoFlow.SeismicUtilities import (
     build_vint_to_vrms_converter, build_time_to_depth_converter,
 )
 
+from vmbrc.datasets import weighted_median
+
 
 def partial(f, *args, **kwargs):
     partial_f = _partial(f, *args, **kwargs)
@@ -247,10 +249,10 @@ class RCNN2DClassifier(RCNN2DRegressor):
             use_bias=False,
             name="vint",
         )
-        self.decoder['vrms'] = wrap_use_argmax(
+        self.decoder['vrms'] = wrap_use_median(
             self.decoder['vrms'], batch_size, params.decode_bins,
         )
-        self.decoder['vdepth'] = wrap_use_argmax(
+        self.decoder['vdepth'] = wrap_use_median(
             self.decoder['vdepth'], batch_size, params.decode_bins,
         )
 
@@ -428,7 +430,7 @@ class Hyperparameters1D(Hyperparameters):
 
         self.learning_rate = 8E-4
 
-        self.decode_bins = 128
+        self.decode_bins = 48
 
         if is_training:
             self.epochs = (10, 20, 10)
@@ -480,13 +482,23 @@ def stochastic_v_loss(decode_bins, scale=1):
     return loss
 
 
-def wrap_use_argmax(converter, batch_size, qty_bins):
+def wrap_use_median(converter, batch_size, qty_bins):
     input_shape = (*converter.input_shape[1:-1], qty_bins)
     input_dtype = converter.inputs[0].dtype
 
     input = Input(shape=input_shape, batch_size=batch_size, dtype=input_dtype)
-    v = tf.argmax(input, axis=-1)
+    bins = tf.linspace(0, 1, qty_bins+1)
+    bins = tf.reduce_mean([bins[:-1], bins[1:]], axis=0)
+    v = bins[None, None, None]
+    v = tf.repeat(v, batch_size, axis=0)
+    v = tf.repeat(v, input_shape[0], axis=1)
+    v = tf.repeat(v, input_shape[1], axis=2)
+    v = tf.py_function(
+        lambda v, weights: weighted_median(v, weights=weights, axis=-1),
+        (v, input),
+        tf.float64,
+    )
     v = tf.cast(v, tf.float32)
-    v = (v+.5) / qty_bins
+    v = v[..., None]
     v = converter(v)
     return Model(inputs=input, outputs=v, name=f"wrapped_{converter.name}")
