@@ -92,7 +92,11 @@ class ErrorBins(Figure):
             xlabel="Quantity of bins (―)",
             ylabel="RMSE (m/s)",
         )
-        ax.legend(loc='lower center', bbox_to_anchor=(.5, 1.))
+        ax.legend(
+            loc='lower center',
+            bbox_to_anchor=(.5, 1.),
+            frame=False,
+        )
 
 
 catalog.register(ErrorBins)

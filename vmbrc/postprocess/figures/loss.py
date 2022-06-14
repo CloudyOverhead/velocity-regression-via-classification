@@ -134,6 +134,7 @@ class Loss(Figure):
             # columnspacing=1.0,
             center=True,
             handler_map={tuple: HandlerTupleVertical()},
+            frame=False,
         )
 
 
