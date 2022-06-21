@@ -22,8 +22,6 @@ from GeoFlow.SeismicUtilities import (
     build_vint_to_vrms_converter, build_time_to_depth_converter,
 )
 
-from vmbrc.datasets import weighted_median
-
 
 def partial(f, *args, **kwargs):
     partial_f = _partial(f, *args, **kwargs)
@@ -494,12 +492,34 @@ def wrap_use_median(converter, batch_size, qty_bins):
     v = tf.repeat(v, batch_size, axis=0)
     v = tf.repeat(v, input_shape[0], axis=1)
     v = tf.repeat(v, input_shape[1], axis=2)
-    v = tf.py_function(
-        lambda v, weights: weighted_median(v, weights=weights, axis=-1),
-        (v, input),
-        tf.float64,
-    )
+    v = weighted_median(v, weights=input, axis=-1)
     v = tf.cast(v, tf.float32)
     v = v[..., None]
     v = converter(v)
     return Model(inputs=input, outputs=v, name=f"wrapped_{converter.name}")
+
+
+def weighted_median(array, weights, axis):
+    weights /= tf.reduce_sum(weights, axis=axis, keepdims=True)
+    weights = tf.cumsum(weights, axis=axis)
+    weights = moveaxis(weights, axis, 0)
+    len_axis, *source_shape = weights.shape
+    weights = tf.reshape(weights, [len_axis, -1])
+    print()
+    median_idx = [tf.searchsorted(w, [.5]) for w in tf.transpose(weights)]
+    array = moveaxis(array, axis, 0)
+    array = tf.reshape(array, [len_axis, -1])
+    array = tf.transpose(array)
+    median = array[tf.range(len(array)), median_idx]
+    median = tf.reshape(median, source_shape)
+    return median
+
+
+def moveaxis(array, src_ax, dest_ax):
+    new_dims = iter([src_ax, dest_ax])
+    # Create a list where `src_ax` and `dest_ax` are interchanged.
+    permutation = [
+        dim if dim not in [src_ax, dest_ax] else next(new_dims)
+        for dim in range(tf.keras.backend.ndim(array))
+    ]
+    return tf.transpose(array, permutation)
