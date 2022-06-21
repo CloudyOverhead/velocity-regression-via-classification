@@ -487,6 +487,7 @@ def wrap_use_median(converter, batch_size, qty_bins):
     input_dtype = converter.inputs[0].dtype
 
     input = Input(shape=input_shape, batch_size=batch_size, dtype=input_dtype)
+    batch_size = input.shape[0]
     bins = tf.linspace(0, 1, qty_bins+1)
     bins = tf.reduce_mean([bins[:-1], bins[1:]], axis=0)
     v = bins[None, None, None]
