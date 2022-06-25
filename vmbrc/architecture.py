@@ -505,21 +505,22 @@ def weighted_median(array, weights, axis):
     weights = moveaxis(weights, axis, 0)
     len_axis, *source_shape = weights.shape
     weights = tf.reshape(weights, [len_axis, -1])
-    print()
-    median_idx = [tf.searchsorted(w, [.5]) for w in tf.transpose(weights)]
+    weights = tf.transpose(weights)
+    median_idx = tf.searchsorted(weights, [[.5]]*weights.shape[0])
     array = moveaxis(array, axis, 0)
     array = tf.reshape(array, [len_axis, -1])
     array = tf.transpose(array)
-    median = array[tf.range(len(array)), median_idx]
+    median = tf.gather_nd(array, median_idx[:, None], batch_dims=1)
     median = tf.reshape(median, source_shape)
     return median
 
 
 def moveaxis(array, src_ax, dest_ax):
-    new_dims = iter([src_ax, dest_ax])
-    # Create a list where `src_ax` and `dest_ax` are interchanged.
-    permutation = [
-        dim if dim not in [src_ax, dest_ax] else next(new_dims)
-        for dim in range(tf.keras.backend.ndim(array))
-    ]
+    ndim = tf.keras.backend.ndim(array)
+    if src_ax < 0:
+        src_ax += ndim
+    if dest_ax < 0:
+        dest_ax += ndim
+    permutation = [dim for dim in range(ndim) if dim != src_ax]
+    permutation.insert(dest_ax, src_ax)
     return tf.transpose(array, permutation)
