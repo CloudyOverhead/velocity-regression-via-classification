@@ -125,6 +125,11 @@ class SelectExample(Metadata):
             std = dataset.generator.read_predictions(
                 filename, savedir + "_std",
             )
+        elif any(preds[key].shape[-2] > 1 for key in TOOUTPUTS):
+            std = {
+                key: dataset.outputs[key].postprocess(preds[key])[1]
+                for key in TOOUTPUTS
+            }
         else:
             std = {}
         cols = [inputs, preds, std, labels, weights]

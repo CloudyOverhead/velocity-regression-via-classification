@@ -51,7 +51,7 @@ class Models(Figure):
                 SelectorMetadata=statistics,
             )
             for percentile in [90, 50, 10]
-            for savedir in ['Regressor', 'Classifier']
+            for savedir in ['Regressor', 'Classifier_0']
         ),
     )
 
@@ -81,8 +81,9 @@ class Models(Figure):
             col_axs[0].format(title=f"{percentile}th percentile")
 
             r = data[f'SelectExample_Article1D_Regressor_{percentile}']
-            c = data[f'SelectExample_Article1D_Classifier_{percentile}']
+            c = data[f'SelectExample_Article1D_Classifier_0_{percentile}']
             lines = [r['inputs'], r['preds'], c['preds'], r['labels']]
+            stds = [None, r['std'], c['std'], None]
             weights = r['weights']
 
             ref = r['labels/ref']
@@ -104,8 +105,8 @@ class Models(Figure):
                     else:
                         line[row_name] = row[crop_top_depth:crop_bottom_depth]
 
-            for line, line_meta, color in zip(
-                lines, lines_meta, [None, *TABLEAU_COLORS],
+            for line, std, line_meta, color in zip(
+                lines, stds, lines_meta, [None, *TABLEAU_COLORS],
             ):
                 for row_name, ax in zip(
                     TOINPUTS+TOOUTPUTS,
@@ -141,6 +142,15 @@ class Models(Figure):
                             axs=[ax],
                             vmax=vmax_,
                         )
+                        if std is not None:
+                            x, std = im_data
+                            ax.fill_betweenx(
+                                np.arange(len(x)),
+                                x-std,
+                                x+std,
+                                color=color,
+                                alpha=.2,
+                            )
 
         start_time = crop_top*dt - tdelay
         src_rec_depth = dataset.acquire.source_depth
