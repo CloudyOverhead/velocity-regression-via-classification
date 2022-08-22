@@ -50,34 +50,36 @@ class Predictions(Metadata):
         print("Weights:", logdir)
         print("Case:", savedir)
 
-        logdirs = listdir(logdir)
-        if any('checkpoint' in dir for dir in logdirs):
-            logdirs = ['']
-        start_times = []
-        for i, current_logdir in enumerate(logdirs):
-            print(f"Using NN {i+1} out of {len(logdirs)}.")
-            start_times.append(str(datetime.now()))
-            print(f"Started at {start_times[-1]}.")
-            current_logdir = join(logdir, current_logdir)
-            current_savedir = f"{savedir}_{i}"
-            current_args = Namespace(
-                nn=nn,
-                params=params,
-                dataset=dataset,
-                logdir=current_logdir,
-                generate=self.generate_dataset,
-                train=False,
-                test=True,
-                gpus=gpus,
-                savedir=current_savedir,
-                plot=False,
-                debug=False,
-                eager=False,
-                workdirs=None,
-            )
-            global_main(current_args)
-        end_time = str(datetime.now())
-        print(f"Finished at {end_time}.")
+        trigger_predictions = bool(gpus)
+        if trigger_predictions or not exists(join(dataset.datatest, savedir)):
+            logdirs = listdir(logdir)
+            if any('checkpoint' in dir for dir in logdirs):
+                logdirs = ['']
+            start_times = []
+            for i, current_logdir in enumerate(logdirs):
+                print(f"Using NN {i+1} out of {len(logdirs)}.")
+                start_times.append(str(datetime.now()))
+                print(f"Started at {start_times[-1]}.")
+                current_logdir = join(logdir, current_logdir)
+                current_savedir = f"{savedir}_{i}"
+                current_args = Namespace(
+                    nn=nn,
+                    params=params,
+                    dataset=dataset,
+                    logdir=current_logdir,
+                    generate=self.generate_dataset,
+                    train=False,
+                    test=True,
+                    gpus=gpus,
+                    savedir=current_savedir,
+                    plot=False,
+                    debug=False,
+                    eager=False,
+                    workdirs=None,
+                )
+                global_main(current_args)
+            end_time = str(datetime.now())
+            print(f"Finished at {end_time}.")
 
         combine_predictions(dataset, logdir, savedir)
 
