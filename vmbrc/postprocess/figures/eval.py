@@ -46,29 +46,35 @@ class Errors(Statistics):
     target_bins = np.linspace(0, 1, 101)
     error_bins = np.linspace(0, 1, 101)
     depth_bins = np.linspace(0, 1, 101)
+    bins = [depth_bins, target_bins, error_bins]
 
     def generate(self, _):
-        dataset = self.dataset
-        savedir = self.savedir
-        reduce = dataset.outputs['vint'].reduce
+        print(f"Comparing predictions for directory {self.savedir}.")
+        _, labels, weights, preds = read_all(self.dataset, self.savedir)
 
-        print(f"Comparing predictions for directory {savedir}.")
-        _, labels, weights, preds = read_all(dataset, savedir)
+        samples = self.compute_samples(labels, preds)
+        samples = [s.flatten() for s in samples]
+        weights = weights["vint"].astype(bool)
+        # Filter out water.
+        weights &= labels['vint'] != labels['vint'][:, [0]]
+        weights = weights.flatten()
+        errors, _ = np.histogramdd(
+            samples, self.bins, weights=weights, normed=True,
+        )
+
+        self['errors'] = errors
+
+    def compute_samples(self, labels, preds):
+        reduce = self.dataset.outputs['vint'].reduce
 
         qty_timesteps = labels["vint"].shape[1]
         timesteps = np.empty_like(labels["vint"])
         timesteps[:] = np.linspace(0, 1, qty_timesteps)[None, :, None]
-        labels["vint"] = np.array([reduce(v)[0] for v in labels["vint"]])
-        preds["vint"] = np.array([reduce(v)[0] for v in preds["vint"]])
-        errors = np.abs(labels["vint"] - preds["vint"])
-        samples = [timesteps, labels["vint"], errors]
-        samples = [s.flatten() for s in samples]
-        bins = [self.depth_bins, self.target_bins, self.error_bins]
-        errors, _ = np.histogramdd(
-            samples, bins, weights=weights["vint"].flatten(), normed=True,
-        )
-
-        self['errors'] = errors  # [timesteps, target, error]
+        labels = np.array([reduce(v)[0] for v in labels["vint"]])
+        preds = np.array([reduce(v)[0] for v in preds["vint"]])
+        errors = np.abs(labels - preds)
+        samples = [timesteps, labels, errors]
+        return samples
 
 
 class Eval(Figure):
