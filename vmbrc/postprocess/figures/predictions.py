@@ -244,6 +244,7 @@ class Statistics(Metadata):
     def print_statistics(self):
         similarities = self['similarities']
         rmses = self['rmses']
+        print(f"Statistics for directory {self.savedir}.")
         print("Average SSIM:", np.mean(similarities))
         print("Standard deviation on SSIM:", np.std(similarities))
         print("Average RMSE:", np.mean(rmses))
