@@ -14,7 +14,7 @@ from .predictions import Predictions, Statistics
 bins_params = []
 params = Hyperparameters1D(is_training=False)
 params.batch_size = 4
-for qty_bins in [8, 16, 24, 32, 48, 64, 96, 128]:
+for qty_bins in [8, 16, 24, 32, 48, 64]:
     p = deepcopy(params)
     p.decode_bins = qty_bins
     bins_params.append(p)
@@ -25,7 +25,7 @@ CompoundBinsPredictions = CompoundMetadata.combine(
         Predictions.construct(
             nn=RCNN2DClassifier,
             params=params,
-            logdir=join('logs', 'classifier-bins', str(params.decode_bins)),
+            logdir=join('logs', 'compare-bins', str(params.decode_bins)),
             savedir=f'Bins_{i}',
             dataset=Article1D(params),
             unique_suffix=f"Bins_{i}",
@@ -44,7 +44,7 @@ CompoundBinsStatistics = CompoundMetadata.combine(
             unique_suffix=f"Bins_{i}{suffix}",
         )
         for i, params in enumerate(bins_params)
-        for suffix in ['', '_0', '_1']
+        for suffix in ['', '_0', '_1', '_2', '_3']
     )
 )
 
@@ -75,7 +75,7 @@ class ErrorBins(Figure):
         qty_bins = []
         scatter = []
         for i, params in enumerate(bins_params):
-            for j in range(2):
+            for j in range(4):
                 key = f"Statistics_RCNN2DClassifier_Bins_{i}_{j}"
                 rmses = data[key]['rmses']
                 qty_bins.append(params.decode_bins)
