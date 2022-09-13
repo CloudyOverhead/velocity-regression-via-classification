@@ -41,7 +41,15 @@ class Models(Figure):
             savedir=None,
             dataset=Article1D(params),
         ),
-        statistics,
+        *(
+            Statistics.construct(
+                nn=RCNN2DClassifier,
+                dataset=Article1D(params),
+                savedir=savedir,
+                unique_suffix=savedir,
+            )
+            for savedir in ['Regressor', "Classifier"]
+        ),
         *(
             SelectExample.construct(
                 savedir=savedir,
@@ -51,7 +59,7 @@ class Models(Figure):
                 SelectorMetadata=statistics,
             )
             for percentile in [90, 50, 10]
-            for savedir in ['Regressor', 'Classifier_0']
+            for savedir in ['Regressor', 'Classifier']
         ),
     )
 
@@ -76,12 +84,16 @@ class Models(Figure):
             spanx=True,
         )
 
+        for key, statistics in data.items():
+            if "Statistics" in key:
+                statistics.print_statistics()
+
         for i, percentile in enumerate([90, 50, 10]):
             col_axs = axs[:, i]
             col_axs[0].format(title=f"{percentile}th percentile")
 
             r = data[f'SelectExample_Article1D_Regressor_{percentile}']
-            c = data[f'SelectExample_Article1D_Classifier_0_{percentile}']
+            c = data[f'SelectExample_Article1D_Classifier_{percentile}']
             lines = [r['inputs'], r['preds'], c['preds'], r['labels']]
             stds = [None, r['std'], c['std'], None]
             weights = r['weights']
@@ -182,7 +194,7 @@ class Models(Figure):
         )
         fig.legend(
             axs[1, 0].lines,
-            labels=["Regressor", "Classifier", "Ground truth"],
+            labels=["Regressors", "Classifiers", "Ground truth"],
             loc='t',
             ncols=3,
             frame=False,
