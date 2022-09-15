@@ -109,6 +109,7 @@ class CompareErrorSTD(Figure):
         lim = data[keys[0]].error_bins[lim]
         vmin, vmax = dataset.model.properties['vp']
         axs.format(
+            abc='(a)',
             xlabel="Confidence metric (m/s)",
             ylabel="Absolute error (m/s)",
             xscale=FuncScale(a=vmax-vmin, decimals=0),
