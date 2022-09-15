@@ -23,6 +23,8 @@ COLOR_CYCLE = [
 ]
 COLOR_CYCLE = pplt.Cycle(color=COLOR_CYCLE)
 
+QTY_ENSEMBLE = 16
+
 
 params = Hyperparameters1D(is_training=False)
 params.batch_size = 2
@@ -32,10 +34,12 @@ statistics = Statistics.construct(
     savedir="Classifier",
 )
 savedirs = [
-    "Regressor", *(f"Regressor_{i}" for i in range(16)),
-    "Classifier", *(f"Classifier_{i}" for i in range(16)),
+    "Regressor", *(f"Regressor_{i}" for i in range(QTY_ENSEMBLE)),
+    "Classifier", *(f"Classifier_{i}" for i in range(QTY_ENSEMBLE)),
 ]
 dataset = Article1D(params)
+vmin, vmax = dataset.model.properties['vp']
+meta_output = dataset.outputs['vint']
 
 
 class STDStatistics(Metadata):
@@ -53,7 +57,7 @@ class STDStatistics(Metadata):
         all_savedirs = [
             ["Regressor_std"],
             ["Classifier"],
-            [f"Classifier_{i}" for i in range(16)],
+            [f"Classifier_{i}" for i in range(QTY_ENSEMBLE)],
         ]
         vmin, vmax = dataset.model.properties['vp']
         for savedirs, key in zip(all_savedirs, self.keys):
@@ -100,8 +104,8 @@ class CompareSTD(Figure):
             SelectExample.construct(
                 savedir=savedir,
                 dataset=dataset,
-                select=SelectExample.partial_select_percentile(50),
-                unique_suffix='50',
+                select=SelectExample.partial_select_percentile(10),
+                unique_suffix='10',
                 SelectorMetadata=statistics,
             )
             for savedir in savedirs
@@ -119,41 +123,39 @@ class CompareSTD(Figure):
             sharey=True,
             sharex=True,
         )
-        meta_output = dataset.outputs['vint']
-        vmin, vmax = dataset.model.properties['vp']
         nt = dataset.acquire.NT // dataset.acquire.resampling
         y = np.arange(nt)
 
         ax = axs[0]
-        d = data['SelectExample_Article1D_Regressor_50']
+        d = data['SelectExample_Article1D_Regressor_10']
         label = d['labels/vint']
         label, _ = meta_output.postprocess(label)
         ax.plot(label, y)
 
         ax = axs[1]
-        d = data['SelectExample_Article1D_Classifier_0_50']
+        d = data['SelectExample_Article1D_Classifier_0_10']
         self.plot_std_classifier(ax, d)
 
         ax = axs[2]
         with pplt.rc.context({'axes.prop_cycle': COLOR_CYCLE}):
-            for i in range(16):
-                d = data[f'SelectExample_Article1D_Classifier_{i}_50']
+            for i in range(QTY_ENSEMBLE):
+                d = data[f'SelectExample_Article1D_Classifier_{i}_10']
                 self.plot_std_classifier(ax, d, alpha_std=.0, show_prob=False)
 
         ax = axs[3]
         with pplt.rc.context({'axes.prop_cycle': COLOR_CYCLE}):
-            for i in range(16):
-                d = data[f'SelectExample_Article1D_Classifier_{i}_50']
+            for i in range(QTY_ENSEMBLE):
+                d = data[f'SelectExample_Article1D_Classifier_{i}_10']
                 self.plot_std_classifier(
                     ax, d, alpha_median=.0, alpha_std=.2, show_prob=False,
                 )
 
         ax = axs[4]
-        d = data['SelectExample_Article1D_Classifier_50']
+        d = data['SelectExample_Article1D_Classifier_10']
         self.plot_std_classifier(ax, d)
 
         ax = axs[5]
-        d = data['SelectExample_Article1D_Regressor_50']
+        d = data['SelectExample_Article1D_Regressor_10']
         v = d['preds/vint']
         v = v[:, 0, :, 0]
         std = d['std/vint']
@@ -183,6 +185,8 @@ class CompareSTD(Figure):
         for ax in axs:
             ax.format(yreverse=True)
 
+        self.compute_rmses(data)
+
     def plot_std_classifier(
         self, ax, data, alpha_median=1., alpha_std=.5, show_prob=True,
     ):
@@ -208,6 +212,61 @@ class CompareSTD(Figure):
         color = line[0].get_color()
         ax.plot(median-std, y, alpha=alpha_std, lw=1, c=color)
         ax.plot(median+std, y, alpha=alpha_std, lw=1, c=color)
+
+    def compute_rmses(self, data):
+        # Ensemble of regressors and ensemble of classifiers
+        self.compute_rmse_between(
+            data, 'Regressor', 'Classifier',
+        )
+        # Medians of individual classifiers and ensemble.
+        self.compute_rmse_between(
+            data, 'Classifier_*', 'Classifier',
+        )
+        # Confidence intervals of individual classifiers and ensemble.
+        self.compute_rmse_between(
+            data, 'Classifier_*', 'Classifier', use_std=True,
+        )
+        # Medians of individual classifiers.
+        self.compute_rmse_between(
+            data, 'Classifier_*', 'Classifier_*',
+        )
+        # Confidence intervals of individual classifiers.
+        self.compute_rmse_between(
+            data, 'Classifier_*', 'Classifier_*', use_std=True,
+        )
+
+
+    def compute_rmse_between(self, data, key1, key2, use_std=False):
+        d1 = self.get_rmse_data(data, key1, use_std=use_std)
+        d2 = self.get_rmse_data(data, key2, use_std=use_std)
+        rmses = []
+        for d1_ in d1:
+            for d2_ in d2:
+                if (d1_ == d2_).all():
+                    continue
+                rmse = np.sqrt(np.mean((d1_-d2_)**2))
+                rmses.append(rmse)
+        rmse = np.mean(rmses)
+        print(
+            f"The RMSE between {key1} and {key2} "
+            f"{'for confidence intervals ' if use_std else ''}"
+            f"is {int(rmse)} m/s."
+        )
+
+    def get_rmse_data(self, data, key, use_std=False):
+        if '*' in key:
+            keys = [key.replace('*', str(i)) for i in range(QTY_ENSEMBLE)]
+        else:
+            keys = [key]
+        ds = []
+        for key in keys:
+            d = data[f'SelectExample_Article1D_{key}_10']
+            d = d['preds/vint']
+            d, std = meta_output.postprocess(d)
+            if use_std:
+                d = np.array([d-std, d+std])
+            ds.append(d)
+        return ds
 
 
 catalog.register(CompareSTD)
