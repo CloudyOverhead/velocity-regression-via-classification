@@ -18,7 +18,7 @@ from .predictions import Predictions, read_all
 TOINPUTS = ['shotgather']
 TOOUTPUTS = ['ref', 'vrms', 'vint', 'vdepth']
 PARAMS = Hyperparameters1D(is_training=False)
-PARAMS.batch_size = 3
+PARAMS.batch_size = 1
 LOGDIR = join('logs', 'classifier', '0')
 SAVEDIR = "Classifier_0"
 
@@ -277,8 +277,11 @@ class AnalyzeNoise(Analyze):
                 xscale=pplt.FuncScale(a=dg*dh, b=gmin*dh, decimals=0),
             )
         axs[:, 0].format(abc='(a)')
+
+        gs = axs[0].get_gridspec()
         for ax in axs[:, 2]:
             fig.delaxes(ax)
+        gs.update(width_ratios=[1, 1, 0], wspace=[0, 0, 1])
 
     def get_2d_label(self, seed):
         seed += self.dataset.trainsize
