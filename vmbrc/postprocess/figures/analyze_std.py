@@ -18,9 +18,11 @@ from .predictions import Predictions, read_all
 TOINPUTS = ['shotgather']
 TOOUTPUTS = ['ref', 'vrms', 'vint', 'vdepth']
 PARAMS = Hyperparameters1D(is_training=False)
-PARAMS.batch_size = 1
+PARAMS.batch_size = 3
 LOGDIR = join('logs', 'classifier', '0')
 SAVEDIR = "Classifier_0"
+
+CLIP = 1E-2
 
 
 def map_cmap(cmap, vmin, vmax):
@@ -28,8 +30,13 @@ def map_cmap(cmap, vmin, vmax):
 
 
 class Analyze(Figure):
-    G_CMAP = pplt.DiscreteColormap(('tan', 'brown'))
+    G_CMAP = pplt.DiscreteColormap(('dodgerblue', 'tan'))
     SAVEDIR = SAVEDIR
+
+    def generate(self, gpus):
+        ngpus = gpus if isinstance(gpus, int) else len(gpus)
+        self.Metadata.params.batch_size = ngpus
+        super().generate(gpus)
 
     def plot(self, data):
         dataset = self.dataset
@@ -40,27 +47,34 @@ class Analyze(Figure):
         else:
             ncols = ncols[0]
 
+        width = ncols * 3.33
+        height = 2.5 * nrows
+        wspace = ((0, 0, None)*ncols)[:-1]
         fig, axs = pplt.subplots(
             nrows=nrows,
-            ncols=ncols*2,
-            figsize=[3.3, 6],
+            ncols=ncols*3,
+            figsize=[width, height],
+            wspace=wspace,
             sharey=True,
             spanx=False,
         )
-        g_axs = [axs[i, j] for j in range(0, ncols*2, 2) for i in range(nrows)]
-        p_axs = [axs[i, j] for j in range(1, ncols*2, 2) for i in range(nrows)]
+        g_axs = [axs[i, j] for j in range(0, ncols*3, 3) for i in range(nrows)]
+        p_axs = [axs[i, j] for j in range(1, ncols*3, 3) for i in range(nrows)]
+        i_axs = [axs[i, j] for j in range(2, ncols*3, 3) for i in range(nrows)]
 
-        meta = dataset.outputs['vint']
+        i_meta = dataset.outputs['vint']
+        v_meta = dataset.outputs['vint']
         vmin, vmax = dataset.model.properties['vp']
         nt = dataset.acquire.NT // dataset.acquire.resampling
         dt = dataset.acquire.dt * dataset.acquire.resampling
         y = np.arange(nt)
 
-        _, labels_1d, _, preds = read_all(dataset, self.SAVEDIR)
+        inputs, labels_1d, _, preds = read_all(dataset, self.SAVEDIR)
+        inputs = inputs['shotgather']
         labels_1d = labels_1d['vint']
         preds = preds['vint']
-        for i, (g_ax, label_1d, p_ax, pred) in enumerate(
-            zip(g_axs, labels_1d, p_axs, preds)
+        for i, (g_ax, label_1d, p_ax, pred, i_ax, input) in enumerate(
+            zip(g_axs, labels_1d, p_axs, preds, i_axs, inputs)
         ):
             pred = pred[:, [-1]]
             label_1d = label_1d[:, [-1]]
@@ -72,28 +86,38 @@ class Analyze(Figure):
                 vmin=label_2d.min(),
                 vmax=label_2d.max()+.001*abs(label_2d.max()),
             )
-            label_1d, _ = meta.postprocess(label_1d)
+            label_1d, _ = v_meta.postprocess(label_1d)
             p_ax.plot(label_1d, y)
             self.plot_std_classifier(p_ax, pred)
+            input, _ = i_meta.preprocess(input, None)
+            input = input[:, :, -1, 0]
+            input = self.preprocess_seismic(input)
+            i_ax.imshow(
+                input,
+                aspect='auto',
+                cmap='Greys',
+                vmin=0,
+                vmax=CLIP,
+            )
 
         self.add_colorbars(fig, axs)
         axs.format(
-            abc='(a)',
             ylabel="$t$ (s)",
-            yscale=pplt.FuncScale(a=dt),
+            yscale=pplt.FuncScale(a=dt, decimals=1),
         )
         for ax in p_axs:
             ax.format(
                 xlabel="Interval\nvelocity\n(m/s)",
                 xlim=[vmin, vmax],
             )
-        for ax in g_axs:
+        for ax in [*g_axs, *i_axs]:
             ax.format(
                 xlabel="$x$ (km)",
                 xscale=pplt.FuncScale(a=dataset.model.dh/1000),
             )
         for ax in axs:
             ax.format(yreverse=True)
+            ax.number = (ax.number+2) // 3
 
         return fig, axs
 
@@ -140,6 +164,15 @@ class Analyze(Figure):
         ax.plot(median-std, y, alpha=alpha_std, lw=1, c=color)
         ax.plot(median+std, y, alpha=alpha_std, lw=1, c=color)
 
+    def preprocess_seismic(self, data):
+        eps = np.finfo(np.float32).eps
+        data -= np.mean(data)
+        trace_rms = np.sqrt(np.sum(data**2, axis=0, keepdims=True))
+        data /= trace_rms + eps
+        panel_max = np.amax(data, axis=(0, 1), keepdims=True)
+        data /= panel_max + eps
+        return data
+
     def add_colorbars(self, fig, axs):
         ticks = self.get_2d_label(0)[[0, -1], 0]
         ticks = [int(np.around(v, -2)) for v in ticks]
@@ -172,6 +205,10 @@ class AnalyzeDip(Analyze):
         unique_suffix='dip',
     )
 
+    def plot(self, *args, **kwargs):
+        fig, axs = super().plot(*args, **kwargs)
+        axs[:, 0].format(abc='(a)')
+
 
 class AnalyzeFault(Analyze):
     dataset = AnalysisFault(PARAMS)
@@ -187,16 +224,11 @@ class AnalyzeFault(Analyze):
 
     def plot(self, *args, **kwargs):
         fig, axs = super().plot(*args, **kwargs)
-        for ax in axs[:2]:
-            ax.set_visible(False)
-            ax.number = 100
-        for i, ax in enumerate(axs[2:]):
-            ax.number = i + 1
+        axs[:, 0].format(abc='(a)')
+        axs[:, 3].format(abc='(a)')
 
 
 class AnalyzeDiapir(Analyze):
-    G_CMAP = pplt.DiscreteColormap(('tan', 'brown'))
-
     dataset = AnalysisDiapir(PARAMS)
     Metadata = Predictions.construct(
         nn=RCNN2DClassifier,
@@ -207,6 +239,11 @@ class AnalyzeDiapir(Analyze):
         do_generate_dataset=True,
         unique_suffix='diapir',
     )
+
+    def plot(self, *args, **kwargs):
+        fig, axs = super().plot(*args, **kwargs)
+        axs[:, 0].format(abc='(a)')
+        axs[:, 3].format(abc='(a)')
 
 
 class AnalyzeNoise(Analyze):
@@ -228,8 +265,8 @@ class AnalyzeNoise(Analyze):
         fig, axs = super().plot(data)
 
         nrows, ncols = axs.shape
-        ncols //= 2
-        g_axs = [axs[i, j] for j in range(0, ncols*2, 2) for i in range(nrows)]
+        ncols //= 3
+        g_axs = [axs[i, j] for j in range(0, ncols*3, 3) for i in range(nrows)]
 
         dh = self.dataset.model.dh
         dg = self.dataset.acquire.dg
@@ -239,8 +276,9 @@ class AnalyzeNoise(Analyze):
                 xlabel="$h$ (m)",
                 xscale=pplt.FuncScale(a=dg*dh, b=gmin*dh, decimals=0),
             )
-
-        return axs
+        axs[:, 0].format(abc='(a)')
+        for ax in axs[:, 2]:
+            fig.delaxes(ax)
 
     def get_2d_label(self, seed):
         seed += self.dataset.trainsize
