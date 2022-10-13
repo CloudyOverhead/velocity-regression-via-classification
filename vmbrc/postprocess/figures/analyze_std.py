@@ -174,22 +174,22 @@ class Analyze(Figure):
         return data
 
     def add_colorbars(self, fig, axs):
-        ticks = self.get_2d_label(0)[[0, -1], 0]
-        ticks = [int(np.around(v, -2)) for v in ticks]
-        dv = (ticks[1]-ticks[0]) / 2
-
-        fig.colorbar(
-            map_cmap(self.G_CMAP, ticks[0]-dv, ticks[1]+dv),
-            ticks=ticks,
-            label="Interval\nvelocity (m/s)",
-            loc='r',
-            row=1,
-        )
+        vs = self.get_2d_label(0)[[0, -1], 0]
+        vs = [int(np.around(v, -2)) for v in vs]
+        for v, y, align in zip(vs, [.9, .1], ['top', 'bottom']):
+            axs[0].text(
+                .5, y, f"{v} m/s",
+                fontsize='small',
+                weight='bold',
+                ha='center',
+                va=align,
+                transform=axs[0].transAxes,
+            )
         fig.colorbar(
             axs[0, 1].images[0],
             label="Logarithmic\nprobability\n$\\mathrm{log}(p)$ (―)",
             loc='r',
-            row=2,
+            row=1,
         )
 
 
