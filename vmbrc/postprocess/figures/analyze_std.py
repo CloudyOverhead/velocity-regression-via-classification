@@ -185,6 +185,9 @@ class Analyze(Figure):
                 va=align,
                 transform=axs[0].transAxes,
             )
+        x = self.get_2d_label(0).shape[1] // 2
+        for g_ax in axs[:, 0]:
+            g_ax.axvline(x, 0, 1, lw=.5, c='w', ls=(0, (5, 5)))
         fig.colorbar(
             axs[0, 1].images[0],
             label="Logarithmic\nprobability\n$\\mathrm{log}(p)$ (―)",
