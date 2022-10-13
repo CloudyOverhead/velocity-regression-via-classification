@@ -83,30 +83,39 @@ class CompareErrorSTD(Figure):
     )
 
     def plot(self, data):
-        _, axs = pplt.subplots(nrows=3, figsize=[3.33, 10])
+        fig, axs = pplt.subplots(ncols=3, figsize=[4.33, 3.33])
         keys = [
             'ErrorsSTD_RCNN2DRegressor',
             'ErrorsSTD_RCNN2DClassifier',
             'ErrorsSTD_RCNN2DClassifier_0',
         ]
-        lim = 0
+        xlim = 0
+        ylim = 0
         for ax, key in zip(axs, keys):
             errors = data[key]
             errors.print_in_confidence_interval()
             errors = errors['errors']
             errors = np.sum(errors, axis=(0, 1))
-            max_ = np.nonzero(np.sum(errors + errors.T, axis=-1))[0][-1]
-            if max_ > lim:
-                lim = max_
+            sum_ = np.sum(errors)
+            errors /= sum_
+            xlim = np.nonzero(np.sum(errors, axis=0))[0][-1]
+            ylim = np.nonzero(np.sum(errors, axis=1))[0][-1]
+            if xlim > xlim:
+                xlim = xlim
+            if ylim > ylim:
+                ylim = ylim
             errors = np.log10(errors)
             ax.imshow(
                 errors,
                 origin='lower',
-                cmap='Greys',
+                cmap='inferno_r',
                 extent=[0, 1, 0, 1],
+                vmin=np.log10(1/sum_),
+                vmax=np.log10(1E-1),
             )
-            ax.plot([0, 1], [0, 1], ls=':', c='k')
-        lim = data[keys[0]].error_bins[lim]
+            ax.plot([0, 1], [0, 1], ls=':', c=[.5]*3)
+        xlim = data[keys[0]].error_bins[xlim]
+        ylim = data[keys[0]].error_bins[ylim]
         vmin, vmax = dataset.model.properties['vp']
         axs.format(
             abc='(a)',
@@ -114,11 +123,16 @@ class CompareErrorSTD(Figure):
             ylabel="Absolute error (m/s)",
             xscale=FuncScale(a=vmax-vmin, decimals=0),
             yscale=FuncScale(a=vmax-vmin, decimals=0),
-            xlim=[0, lim],
-            ylim=[0, lim],
+            xlim=[0, xlim],
+            ylim=[0, ylim],
         )
         for ax in axs:
             ax.locator_params(nbins=4)
+        fig.colorbar(
+            axs[0].images[0],
+            label="Logarithmic probability $\\mathrm{log}(p)$ (―)",
+            loc='r',
+        )
 
 
 catalog.register(CompareErrorSTD)
