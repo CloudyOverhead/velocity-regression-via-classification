@@ -4,7 +4,6 @@ from os.path import join
 
 import numpy as np
 import proplot as pplt
-from matplotlib import pyplot as plt
 
 from vmbrc.datasets import Article1D
 from vmbrc.architecture import (
@@ -83,7 +82,7 @@ class CompareErrorSTD(Figure):
     )
 
     def plot(self, data):
-        fig, axs = pplt.subplots(ncols=3, figsize=[4.33, 3.33])
+        fig, axs = pplt.subplots(ncols=3, figsize=[4.33, 2])
         keys = [
             'ErrorsSTD_RCNN2DRegressor',
             'ErrorsSTD_RCNN2DClassifier',
@@ -96,24 +95,22 @@ class CompareErrorSTD(Figure):
             errors.print_in_confidence_interval()
             errors = errors['errors']
             errors = np.sum(errors, axis=(0, 1))
-            sum_ = np.sum(errors)
-            errors /= sum_
-            xlim = np.nonzero(np.sum(errors, axis=0))[0][-1]
-            ylim = np.nonzero(np.sum(errors, axis=1))[0][-1]
+            errors /= np.sum(errors)
+            xlim = np.nonzero(np.sum(errors, axis=0) > .002)[0][-1]
+            ylim = np.nonzero(np.sum(errors, axis=1) > .002)[0][-1]
             if xlim > xlim:
                 xlim = xlim
             if ylim > ylim:
                 ylim = ylim
-            errors = np.log10(errors)
+            ax.set_facecolor('k')
             ax.imshow(
-                errors,
+                errors*100,
                 origin='lower',
-                cmap='inferno_r',
+                cmap='magma',
                 extent=[0, 1, 0, 1],
-                vmin=np.log10(1/sum_),
-                vmax=np.log10(1E-1),
+                vmin=0,
             )
-            ax.plot([0, 1], [0, 1], ls=':', c=[.5]*3)
+            ax.plot([0, 1], [0, 1], ls=':', c='w')
         xlim = data[keys[0]].error_bins[xlim]
         ylim = data[keys[0]].error_bins[ylim]
         vmin, vmax = dataset.model.properties['vp']
@@ -130,8 +127,9 @@ class CompareErrorSTD(Figure):
             ax.locator_params(nbins=4)
         fig.colorbar(
             axs[0].images[0],
-            label="Logarithmic probability $\\mathrm{log}(p)$ (―)",
+            label="Proportion of data (%)",
             loc='r',
+            ticks=np.arange(0, 2, .5),
         )
 
 
