@@ -14,7 +14,7 @@ from ..catalog import catalog, Figure, CompoundMetadata
 from .predictions import Predictions, Statistics, SelectExample
 
 TOINPUTS = ['shotgather']
-TOOUTPUTS = ['ref', 'vrms', 'vint', 'vdepth']
+TOOUTPUTS = ['vint']
 
 params = Hyperparameters1D(is_training=False)
 params.batch_size = 2
@@ -75,9 +75,9 @@ class Models(Figure):
         lines_meta = [in_meta, out_meta, c_out_meta, out_meta]
 
         fig, axs = pplt.subplots(
-            nrows=4,
+            nrows=2,
             ncols=3,
-            figsize=[7.6, 9],
+            figsize=[7.6, 4.5],
             sharey=1,
             sharex=False,
             spany=False,
@@ -100,30 +100,15 @@ class Models(Figure):
 
             ref = r['labels/ref']
             crop_top = int(np.nonzero(ref.astype(bool).any(axis=1))[0][0]*.95)
-            dh = dataset.model.dh
-            dt = dataset.acquire.dt * dataset.acquire.resampling
-            vmin, vmax = dataset.model.properties['vp']
-            water_v = 1500
-            tdelay = dataset.acquire.tdelay
-            crop_top_depth = int((crop_top-tdelay/dt)*dt/2*water_v/dh)
-            mask = r['weights/vdepth']
-            crop_bottom_depth = np.nonzero((~mask.astype(bool)).all(axis=1))
-            crop_bottom_depth = int(crop_bottom_depth[0][0])
 
             for line in [*lines, weights, r['std'], c['std']]:
                 for row_name, row in line.items():
-                    if row_name != 'vdepth':
-                        line[row_name] = row[crop_top:]
-                    else:
-                        line[row_name] = row[crop_top_depth:crop_bottom_depth]
+                    line[row_name] = row[crop_top:]
 
             for line, std, line_meta, color in zip(
                 lines, stds, lines_meta, [None, *TABLEAU_COLORS],
             ):
-                for row_name, ax in zip(
-                    TOINPUTS+TOOUTPUTS,
-                    [col_axs[0], *col_axs],
-                ):
+                for row_name, ax in zip(TOINPUTS+TOOUTPUTS, col_axs):
                     if row_name not in line.keys():
                         continue
                     im_data = line[row_name]
@@ -131,43 +116,25 @@ class Models(Figure):
                         im_data = line_meta[row_name].postprocess(im_data)
                     except AttributeError:
                         pass
-                    if row_name == 'vrms':
-                        vmax_ = 2500
-                    else:
-                        vmax_ = None
-                    if row_name == 'ref':
-                        while im_data.ndim > 2:
-                            im_data = im_data[..., 0]
-                        cmap = pplt.Colormap(color)
-                        px = ax.panel('r', width='.5em', space=0)
-                        px.imshow(
-                            im_data,
-                            cmap=cmap,
-                            vmin=0,
-                            vmax=1,
-                            aspect='auto',
+                    line_meta[row_name].plot(
+                        im_data,
+                        axs=[ax],
+                        vmax=None,
+                    )
+                    if std is not None:
+                        x, std = im_data
+                        ax.fill_betweenx(
+                            np.arange(len(x)),
+                            x-std,
+                            x+std,
+                            color=color,
+                            alpha=.2,
                         )
-                        px.set_axis_off()
-                    else:
-                        line_meta[row_name].plot(
-                            im_data,
-                            axs=[ax],
-                            vmax=vmax_,
-                        )
-                        if std is not None:
-                            x, std = im_data
-                            ax.fill_betweenx(
-                                np.arange(len(x)),
-                                x-std,
-                                x+std,
-                                color=color,
-                                alpha=.2,
-                            )
 
+        dh = dataset.model.dh
+        dt = dataset.acquire.dt * dataset.acquire.resampling
+        tdelay = dataset.acquire.tdelay
         start_time = crop_top*dt - tdelay
-        src_rec_depth = dataset.acquire.source_depth
-        start_depth = crop_top_depth*dh + src_rec_depth
-
         dcmp = dataset.acquire.ds * dh
         h0 = dataset.acquire.minoffset
 
@@ -183,15 +150,8 @@ class Models(Figure):
         axs[0, :].format(
             xlabel="$h$ (km)",
             xscale=pplt.FuncScale(a=dcmp/1000, b=h0/1000),
-            xreverse=True,
         )
-        axs[1, :].format(xlabel="$v_\\mathrm{RMS}(t, x)$")
-        axs[2, :].format(xlabel="$v_\\mathrm{int}(t, x)$")
-        axs[3, :].format(xlabel="$v_\\mathrm{int}(z, x)$")
-        axs[3, :].format(
-            ylabel="$z$ (km)",
-            yscale=pplt.FuncScale(a=dh/1000, b=start_depth/1000),
-        )
+        axs[1, :].format(xlabel="$v_\\mathrm{int}(t, x)$")
         fig.legend(
             axs[1, 0].lines,
             labels=["Regressors", "Classifiers", "Ground truth"],
