@@ -6,7 +6,6 @@ from itertools import cycle
 from copy import copy, deepcopy
 
 import numpy as np
-from scipy.signal import convolve
 from ModelGenerator import (
     Sequence as GeoSequence, Stratigraphy, Deformation, Property, Lithology,
     Diapir, ModelGenerator,
@@ -30,7 +29,8 @@ DistributeOptions.auto_shard_policy = options_lib.create_option(
     name="auto_shard_policy",
     ty=AutoShardPolicy,
     docstring="The type of sharding to use. See "
-    "`tf.data.experimental.AutoShardPolicy` for additional information.",
+              "`tf.data.experimental.AutoShardPolicy` for additional "
+              "information.",
     default_factory=lambda: AutoShardPolicy.DATA,
 )
 
@@ -158,6 +158,7 @@ class Article1D(Dataset):
         model.water_dmax = 3.1 * model.water_vmax
         model.vp_min = 1300.0
         model.vp_max = 4000.0
+        model.dzmin = None
         model.dzmax = 1000
         model.accept_decrease = .65
 
@@ -241,6 +242,7 @@ class Analysis(Article1D):
 
         self.add_grid_sampler(model)
         model.NX = int(2*acquire.gmax-acquire.gmin/2) + 2*acquire.Npad
+        model.NZ //= 2
         model.layer_num_min = 1
         model.layer_dh_min = 499
         model.layer_dh_max = 500
@@ -249,8 +251,18 @@ class Analysis(Article1D):
         model.water_dmin = 1.499 * model.water_vmin
         model.water_dmax = 1.500 * model.water_vmax
         model.dip_0 = False
+        model.dzmin = model.dzmax = 500
 
+        acquire.NT = int(6 / acquire.dt)
         acquire.singleshot = False
+
+        model.dh /= 4
+        model.NX *= 4
+        model.NZ *= 4
+        acquire.dg *= 4
+        acquire.ds *= 4
+        acquire.gmin *= 4
+        acquire.gmax *= 4
 
         for input in inputs.values():
             input.train_on_shots = False
@@ -301,7 +313,7 @@ class Analysis(Article1D):
 class AnalysisDip(Analysis):
     def set_dataset(self):
         model, acquire, inputs, outputs = super().set_dataset()
-        model.features = {'dip': [0, 15, 30, 45, 60, 75]}
+        model.features = {'dip': [0, 5, 10, 20]}
         return model, acquire, inputs, outputs
 
 
@@ -309,7 +321,7 @@ class AnalysisFault(Analysis):
     def set_dataset(self):
         model, acquire, inputs, outputs = super().set_dataset()
         model.features = {
-            'fault_dip': [0, 15, 30, 45, 60, 75],
+            'fault_dip': [10, 45, 90],
             'fault_displ': [-500, -1000],
         }
         model.fault_x_lim = [int(.5*model.NX), int(.5*model.NX)]
@@ -324,19 +336,21 @@ class AnalysisDiapir(Analysis):
         model, acquire, inputs, outputs = super().set_dataset()
 
         model.features = {
-            'diapir_height': [100, 200],
-            'diapir_width': [100, 200],
+            'diapir_width': [400, 800],
+            'diapir_loc': [model.NX // 2, 800],
         }
+        model.diapir_height_min = model.diapir_height_max = 400
 
         return model, acquire, inputs, outputs
 
     def add_diapir_to_stratigraphy(self, model):
         strati = model.strati
         properties = [p for p in strati.sequences[-1].lithologies[-1]]
-        salt = Property(name=properties[0].name, vmin=4500, vmax=4500)
-        properties[0] = salt
+        properties[0] = Property(name=properties[0].name, vmin=2000, vmax=2000)
         diapir = Diapir(
             properties=properties,
+            loc_min=model.diapir_loc_min,
+            loc_max=model.diapir_loc_max,
             height_min=model.diapir_height_min,
             height_max=model.diapir_height_max,
             width_min=model.diapir_width_min,
@@ -353,7 +367,7 @@ class AnalysisDiapir(Analysis):
 
 class AnalysisNoise(Article1D):
     name = "Article1D"
-    scales = [.5, 1., 1.5, 2.]
+    scales = [.5, 1., 2.]  # S/N ratio is 1/scale**2.
 
     def set_dataset(self):
         model, acquire, inputs, outputs = super().set_dataset()
@@ -425,90 +439,6 @@ class AnalysisNoise(Article1D):
         return copy(dataset)
 
 
-class USGS(Article2D):
-    def set_dataset(self):
-        model, acquire, inputs, outputs = super().set_dataset()
-
-        self.trainsize = 1
-        self.validatesize = 0
-        self.testsize = 1
-
-        model.NX = NS*acquire.ds + acquire.gmax + 2*acquire.Npad
-        model.NZ = 2000
-
-        dt = acquire.dt * acquire.resampling
-        real_tdelay = 0
-        pad = int((acquire.tdelay-real_tdelay) / dt)
-        acquire.NT = (3071+pad) * acquire.resampling
-
-        inputs = {ShotGather.name: ShotGather(model=model, acquire=acquire)}
-        bins = self.params.decode_bins
-        outputs = {
-            Reftime.name: Reftime(model=model, acquire=acquire),
-            Vrms.name: Vrms(model=model, acquire=acquire, bins=bins),
-            Vint.name: Vint(model=model, acquire=acquire, bins=bins),
-            Vdepth.name: Vdepth(model=model, acquire=acquire, bins=bins),
-        }
-        for input in inputs.values():
-            input.mute_dir = False
-            input.train_on_shots = False
-            input.preprocess = decorate_preprocess(input)
-        for output in outputs.values():
-            input.train_on_shots = False
-            output.identify_direct = False
-        return model, acquire, inputs, outputs
-
-
-def decorate_preprocess(self):
-    def preprocess_real_data(data, labels, use_agc=False):
-        acquire = self.acquire
-        ng = int(round((acquire.gmax-acquire.gmin) / acquire.dg))
-        ns = data.shape[1] // ng
-        self.model.NX = ns*acquire.ds + acquire.gmax + 2*acquire.Npad
-
-        data = data.reshape([3071, -1, 72])
-        NT = int(self.acquire.NT / self.acquire.resampling)
-        pad = NT - data.shape[0]
-        data = np.pad(data, [[pad, 0], [0, 0], [0, 0]])
-        data = data.swapaxes(1, 2)
-
-        END_CMP = 2100
-        data = data[:, :, :END_CMP]
-
-        eps = np.finfo(np.float32).eps
-        if use_agc:
-            agc_kernel = np.ones([21, 5, 1])
-            agc_kernel /= agc_kernel.size
-            pads = [[int(pad//2), int(pad//2)] for pad in agc_kernel.shape]
-            gain = convolve(
-                np.pad(data, pads, mode='symmetric')**2,
-                agc_kernel,
-                'valid',
-            )
-            gain[gain < eps] = eps
-            gain = 1 / np.sqrt(gain)
-        vmax = np.amax(data, axis=0)
-        first_arrival = np.argmax(data > .4*vmax[None], axis=0)
-        dt = self.acquire.dt * self.acquire.resampling
-        pad = int(1 / self.acquire.peak_freq / dt)
-        mask = np.ones_like(data, dtype=bool)
-        for (i, j), trace_arrival in np.ndenumerate(first_arrival):
-            mask[:trace_arrival-pad, i, j] = False
-        data[~mask] = 0
-        if use_agc:
-            data[mask] *= gain[mask]
-
-        trace_rms = np.sqrt(np.sum(data**2, axis=0, keepdims=True))
-        data /= trace_rms + eps
-        panel_max = np.amax(data, axis=(0, 1), keepdims=True)
-        data /= panel_max + eps
-
-        data *= 1000
-        data = np.expand_dims(data, axis=-1)
-        return data
-    return preprocess_real_data
-
-
 class MarineModel(MarineModel):
     def generate_model(self, *args, seed=None, **kwargs):
         is_2d = self.dip_max > 0
@@ -545,6 +475,7 @@ class MarineModel(MarineModel):
             texture=self.max_texture,
             trend_min=self.vp_trend_min,
             trend_max=self.vp_trend_max,
+            dzmin=self.dzmin,
             dzmax=self.dzmax,
             filter_decrease=self.accept_decrease > 0,
         )
@@ -590,20 +521,7 @@ class Vrms(Vrms):
         max_, std = data
         if weights is not None:
             weights = weights[..., 0, 0]
-
-        ims = super().plot(max_, weights, axs, cmap, vmin, vmax, clip, ims)
-
-        if std.max()-std.min() > 0:
-            if std_min is None:
-                std_min = std.min()
-            if std_max is None:
-                std_max = std.max()
-            alpha = (std-std_min) / (std_max-std_min)
-            alpha = .8*(np.exp(-alpha**2)-np.exp(-1))/(1-np.exp(-1)) + .2
-            alpha = np.clip(alpha, 0, 1)
-            for im in ims:
-                im.set_alpha(alpha)
-        return ims
+        return super().plot(max_, weights, axs, cmap, vmin, vmax, clip, ims)
 
     def postprocess(self, output):
         median, std = self.reduce(output)
