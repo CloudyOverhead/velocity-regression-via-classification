@@ -22,7 +22,7 @@ PARAMS.batch_size = 1
 LOGDIR = join('logs', 'classifier', '0')
 SAVEDIR = "Classifier_0"
 
-CLIP = 1E-2
+CLIP = 1E-1
 
 
 def map_cmap(cmap, vmin, vmax):
@@ -104,19 +104,28 @@ class Analyze(Figure):
         axs.format(
             ylabel="$t$ (s)",
             yscale=pplt.FuncScale(a=dt, decimals=1),
+            yreverse=True,
+            xrotation=90,
         )
         for ax in p_axs:
             ax.format(
                 xlabel="Interval\nvelocity\n(m/s)",
                 xlim=[vmin, vmax],
             )
-        for ax in [*g_axs, *i_axs]:
+        dh = dataset.model.dh
+        gmin = dataset.acquire.gmin * dh
+        dg = dataset.acquire.dg * dh
+        for ax in [*g_axs]:
             ax.format(
                 xlabel="$x$ (km)",
-                xscale=pplt.FuncScale(a=dataset.model.dh/1000),
+                xscale=pplt.FuncScale(a=dh/1000),
+            )
+        for ax in [*i_axs]:
+            ax.format(
+                xlabel="$h$ (km)",
+                xscale=pplt.FuncScale(a=dg/1000, b=gmin/1000),
             )
         for ax in axs:
-            ax.format(yreverse=True)
             ax.number = (ax.number+2) // 3
 
         return fig, axs
@@ -186,7 +195,8 @@ class Analyze(Figure):
                 transform=axs[0].transAxes,
             )
         x = self.get_2d_label(0).shape[1] // 2
-        for g_ax in axs[:, 0]:
+        g_axs = [ax for i in range(0, axs.shape[1], 3) for ax in axs[:, i]]
+        for g_ax in g_axs:
             g_ax.axvline(x, 0, 1, lw=.5, c='w', ls=(0, (5, 5)))
         fig.colorbar(
             axs[0, 1].images[0],
