@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from os.path import join, curdir
+from itertools import product
 
 import numpy as np
 import proplot as pplt
@@ -128,6 +129,8 @@ class Analyze(Figure):
         for ax in axs:
             ax.number = (ax.number+2) // 3
 
+        self.print_average_std(preds)
+
         return fig, axs
 
     def get_2d_label(self, seed):
@@ -204,6 +207,16 @@ class Analyze(Figure):
             loc='r',
             row=1,
         )
+
+    def print_average_std(self, preds):
+        meta_output = self.dataset.outputs['vint']
+        features = self.dataset.model.features
+        print("Average STD per feature combination:")
+        keys = features.keys()
+        for pred, values in zip(preds, product(*features.values())):
+            _, std = meta_output.postprocess(pred)
+            f = dict(zip(keys, values))
+            print(f, '―', round(std.mean()), 'm/s')
 
 
 class AnalyzeDip(Analyze):
