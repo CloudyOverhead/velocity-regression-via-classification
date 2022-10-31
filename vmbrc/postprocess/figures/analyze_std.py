@@ -129,8 +129,6 @@ class Analyze(Figure):
         for ax in axs:
             ax.number = (ax.number+2) // 3
 
-        self.print_average_std(preds)
-
         return fig, axs
 
     def get_2d_label(self, seed):
@@ -175,6 +173,15 @@ class Analyze(Figure):
         color = line[0].get_color()
         ax.plot(median-std, y, alpha=alpha_std, lw=1, c=color)
         ax.plot(median+std, y, alpha=alpha_std, lw=1, c=color)
+        std = round(std.mean())
+        ax.text(
+            .95, .95,
+            rf"$\bar{{\sigma}}_\mathrm{{int}} = {std}~\mathrm{{m/s}}$",
+            fontsize='small',
+            ha='right',
+            va='top',
+            transform=ax.transAxes,
+        )
 
     def preprocess_seismic(self, data):
         eps = np.finfo(np.float32).eps
@@ -190,9 +197,9 @@ class Analyze(Figure):
         vs = [int(np.around(v, -2)) for v in vs]
         for v, y, align in zip(vs, [.9, .1], ['top', 'bottom']):
             axs[0].text(
-                .5, y, f"{v} m/s",
+                .5, y,
+                rf"$v_\mathrm{{int}} = {v}~\mathrm{{m/s}}$",
                 fontsize='small',
-                weight='bold',
                 ha='center',
                 va=align,
                 transform=axs[0].transAxes,
@@ -207,16 +214,6 @@ class Analyze(Figure):
             loc='r',
             row=1,
         )
-
-    def print_average_std(self, preds):
-        meta_output = self.dataset.outputs['vint']
-        features = self.dataset.model.features
-        print("Average STD per feature combination:")
-        keys = features.keys()
-        for pred, values in zip(preds, product(*features.values())):
-            _, std = meta_output.postprocess(pred)
-            f = dict(zip(keys, values))
-            print(f, '―', round(std.mean()), 'm/s')
 
 
 class AnalyzeDip(Analyze):
