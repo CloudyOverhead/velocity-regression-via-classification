@@ -267,7 +267,7 @@ class Analysis(Article1D):
         for input in inputs.values():
             input.train_on_shots = False
         for output in outputs.values():
-            input.train_on_shots = False
+            output.train_on_shots = False
 
         return model, acquire, inputs, outputs
 
