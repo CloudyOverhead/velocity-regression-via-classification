@@ -23,7 +23,7 @@ PARAMS.batch_size = 1
 LOGDIR = join('logs', 'classifier', '0')
 SAVEDIR = "Classifier_0"
 
-CLIP = 1E-1
+CLIP = 5E-1
 
 
 def map_cmap(cmap, vmin, vmax):
@@ -63,7 +63,6 @@ class Analyze(Figure):
         p_axs = [axs[i, j] for j in range(1, ncols*3, 3) for i in range(nrows)]
         i_axs = [axs[i, j] for j in range(2, ncols*3, 3) for i in range(nrows)]
 
-        i_meta = dataset.outputs['vint']
         v_meta = dataset.outputs['vint']
         vmin, vmax = dataset.model.properties['vp']
         nt = dataset.acquire.NT // dataset.acquire.resampling
@@ -90,9 +89,8 @@ class Analyze(Figure):
             label_1d, _ = v_meta.postprocess(label_1d)
             p_ax.plot(label_1d, y)
             self.plot_std_classifier(p_ax, pred)
-            input, _ = i_meta.preprocess(input, None)
             input = input[:, :, -1, 0]
-            input = self.preprocess_seismic(input)
+            input /= 1000
             i_ax.imshow(
                 input,
                 aspect='auto',
@@ -175,31 +173,22 @@ class Analyze(Figure):
         ax.plot(median+std, y, alpha=alpha_std, lw=1, c=color)
         std = round(std.mean())
         ax.text(
-            .95, .95,
-            rf"$\bar{{\sigma}}_\mathrm{{int}} = {std}~\mathrm{{m/s}}$",
+            .5, .90, f"{std} m/s",
             fontsize='small',
-            ha='right',
+            weight='bold',
+            ha='center',
             va='top',
             transform=ax.transAxes,
         )
-
-    def preprocess_seismic(self, data):
-        eps = np.finfo(np.float32).eps
-        data -= np.mean(data)
-        trace_rms = np.sqrt(np.sum(data**2, axis=0, keepdims=True))
-        data /= trace_rms + eps
-        panel_max = np.amax(data, axis=(0, 1), keepdims=True)
-        data /= panel_max + eps
-        return data
 
     def add_colorbars(self, fig, axs):
         vs = self.get_2d_label(0)[[0, -1], 0]
         vs = [int(np.around(v, -2)) for v in vs]
         for v, y, align in zip(vs, [.9, .1], ['top', 'bottom']):
             axs[0].text(
-                .5, y,
-                rf"$v_\mathrm{{int}} = {v}~\mathrm{{m/s}}$",
+                .5, y, f"{v} m/s",
                 fontsize='small',
+                weight='bold',
                 ha='center',
                 va=align,
                 transform=axs[0].transAxes,
