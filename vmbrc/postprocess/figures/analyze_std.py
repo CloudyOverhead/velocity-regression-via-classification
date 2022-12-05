@@ -212,6 +212,13 @@ class Analyze(Figure):
             ha='right',
             va='top',
             transform=ax.transAxes,
+            bbox=dict(
+                facecolor='k',
+                edgecolor='none',
+                alpha=.2,
+                boxstyle='round',
+                pad=0
+            ),
         )
 
     def add_colorbars(self, fig, axs):
