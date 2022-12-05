@@ -77,7 +77,8 @@ class Models(Figure):
         fig, axs = pplt.subplots(
             nrows=2,
             ncols=3,
-            figsize=[7.6, 4.5],
+            figheight=4.5,
+            journal='cageo2',
             sharey=1,
             sharex=False,
             spany=False,
@@ -142,6 +143,8 @@ class Models(Figure):
             abc='(a)',
             abcloc='l',
             title="",
+            grid=False,
+            gridminor=False,
         )
         axs[0:3, :].format(
             ylabel="$t$ (s)",
@@ -151,7 +154,7 @@ class Models(Figure):
             xlabel="$h$ (km)",
             xscale=pplt.FuncScale(a=dcmp/1000, b=h0/1000),
         )
-        axs[1, :].format(xlabel="$v_\\mathrm{int}(t, x)$")
+        axs[1, :].format(xlabel="$v_\\mathrm{int}(t)$")
         fig.legend(
             axs[1, 0].lines,
             labels=["Regressors", "Classifiers", "Ground truth"],

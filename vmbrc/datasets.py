@@ -273,9 +273,12 @@ class Analysis(Article1D):
 
     def add_grid_sampler(self, model):
         def flat_features():
-            features = np.meshgrid(*(f for f in model.features.values()))
-            features = np.moveaxis(features, 0, -1)
-            return features.reshape([-1, features.shape[-1]])
+            features = meshgrid(*(f for f in model.features.values()))
+            nfeatures = len(features)
+            features = np.moveaxis(features, 0, nfeatures)
+            shape = [-1, *features.shape[nfeatures:]]
+            features = features.reshape(shape)
+            return features
 
         def generate_model(seed=None):
             alt_model = deepcopy(model)
@@ -283,12 +286,21 @@ class Analysis(Article1D):
                 seed = np.random.randint(len(alt_model.flat_features()))
             features = alt_model.flat_features()[seed]
             for name, feature in zip(alt_model.features.keys(), features):
-                setattr(alt_model, name+'_min', feature)
-                setattr(alt_model, name+'_max', feature)
+                if isinstance(name, tuple):
+                    for n in name:
+                        if isinstance(feature, np.ndarray):
+                            feature = list(feature)
+                        setattr(alt_model, n, feature)
+                else:
+                    if isinstance(feature, np.ndarray):
+                        feature = list(feature)
+                    setattr(alt_model, name, feature)
             thicks = [alt_model.NZ // 2] * 2
             dips = [0, alt_model.dip_max]
             if hasattr(self, 'add_diapir_to_stratigraphy'):
                 self.add_diapir_to_stratigraphy(alt_model)
+            if hasattr(self, 'add_texture_to_property'):
+                self.add_texture_to_property(alt_model)
 
             props, layerids, layers = ModelGenerator.generate_model(
                 alt_model,
@@ -313,19 +325,30 @@ class Analysis(Article1D):
 class AnalysisDip(Analysis):
     def set_dataset(self):
         model, acquire, inputs, outputs = super().set_dataset()
-        model.features = {'dip': [0, 5, 10, 20]}
+        model.features = {('dip_min', 'dip_max'): [0, 5, 10, 20]}
         return model, acquire, inputs, outputs
 
 
 class AnalysisFault(Analysis):
     def set_dataset(self):
         model, acquire, inputs, outputs = super().set_dataset()
+
+        model.dh *= 4
+        model.NX //= 4
+        model.NZ //= 4
+        acquire.dg //= 4
+        acquire.ds //= 4
+        acquire.gmin //= 4
+        acquire.gmax //= 4
+
         model.features = {
-            'fault_dip': [10, 45, 90],
-            'fault_displ': [-500, -1000],
+            'fault_x_lim': [
+                [int(p*model.NX)]*2 for p in np.arange(.2, .7, .15)
+            ],
         }
-        model.fault_x_lim = [int(.5*model.NX), int(.5*model.NX)]
-        model.fault_y_lim = [int(.5*model.NZ), int(.5*model.NZ)]
+        model.fault_dip_min = model.fault_dip_max = 90
+        model.fault_displ_min = model.fault_displ_max = -500
+        model.fault_y_lim = [int(.5*model.NZ)] * 2
         model.fault_nmax = 1
         model.fault_prob = 1
         return model, acquire, inputs, outputs
@@ -367,7 +390,7 @@ class AnalysisDiapir(Analysis):
 
 class AnalysisNoise(Article1D):
     name = "Article1D"
-    scales = [.5, 1., 2.]  # S/N ratio is 1/scale**2.
+    scales = [1., 2., 4., 8.]  # S/N ratio is 1/scale**2.
 
     def set_dataset(self):
         model, acquire, inputs, outputs = super().set_dataset()
@@ -562,7 +585,7 @@ class Vdepth(Vrms, Vdepth):
 
 class ShotGather(ShotGather):
     def plot(
-        self, data, weights=None, axs=None, cmap='Greys', vmin=0, vmax=None,
+        self, data, weights=None, axs=None, cmap='Greys', vmin=None, vmax=None,
         clip=.08, ims=None,
     ):
         if data.shape[2] == 1 and weights is not None:
@@ -582,3 +605,63 @@ def weighted_median(array, weights, axis):
     median = array[np.arange(len(array)), median_idx]
     median = median.reshape(source_shape)
     return median
+
+
+def meshgrid(*xi, copy=True, sparse=False, indexing='xy'):
+    """Return coordinate matrices from coordinate vectors.
+
+    This function is modified from NumPy (https://github.com/numpy/numpy),
+    which is licensed under the BSD 3-Clause "New" or "Revised" License:
+
+        Copyright (c) 2005-2022, NumPy Developers.
+        All rights reserved.
+
+        Redistribution and use in source and binary forms, with or without
+        modification, are permitted provided that the following conditions are
+        met:
+
+            * Redistributions of source code must retain the above copyright
+               notice, this list of conditions and the following disclaimer.
+
+            * Redistributions in binary form must reproduce the above
+               copyright notice, this list of conditions and the following
+               disclaimer in the documentation and/or other materials provided
+               with the distribution.
+
+            * Neither the name of the NumPy Developers nor the names of any
+               contributors may be used to endorse or promote products derived
+               from this software without specific prior written permission.
+
+        THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+        "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+        LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+        A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+        OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+        SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+        LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+        OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+    """
+    ndim = len(xi)
+
+    if indexing not in ['xy', 'ij']:
+        raise ValueError("Valid values for `indexing` are 'xy' and 'ij'.")
+
+    s0 = (1,) * ndim
+    output = [np.array(x) for x in xi]
+
+    if indexing == 'xy' and ndim > 1:
+        # switch first and second axis
+        output[0].shape = (1, -1) + s0[2:]
+        output[1].shape = (-1, 1) + s0[2:]
+
+    if not sparse:
+        # Return the full N-D matrix (not only the 1-D vector)
+        output = np.broadcast_arrays(*output, subok=True)
+
+    if copy:
+        output = [x.copy() for x in output]
+
+    return output

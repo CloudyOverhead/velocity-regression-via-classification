@@ -56,7 +56,12 @@ class ErrorBins(Figure):
     )
 
     def plot(self, data):
-        _, ax = pplt.subplots(nrows=1, ncols=1)
+        _, ax = pplt.subplots(
+            nrows=1,
+            ncols=1,
+            figheight=3,
+            journal='cageo1',
+        )
 
         qty_bins = []
         line = []
@@ -69,7 +74,7 @@ class ErrorBins(Figure):
             qty_bins,
             line,
             ls=':',
-            label="Average",
+            label="Ensemble",
         )
 
         qty_bins = []
@@ -85,11 +90,11 @@ class ErrorBins(Figure):
             scatter,
             m='o',
             ms=4,
-            label="Ensemble",
+            label="Individual NNs",
         )
 
         ax.format(
-            xlabel="Quantity of bins (―)",
+            xlabel="$n_\\mathrm{bins}$ (―)",
             ylabel="RMSE (m/s)",
         )
         ax.legend(

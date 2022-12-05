@@ -227,9 +227,9 @@ class Eval(Figure):
         LABEL_NAMES = {
             'loss': "Total loss",
             'ref_loss': "Primaries",
-            'vrms_loss': "$v_\\mathrm{RMS}(t, x)$",
-            'vint_loss': "$v_\\mathrm{int}(t, x)$",
-            'vdepth_loss': "$v_\\mathrm{int}(z, x)$",
+            'vrms_loss': "$v_\\mathrm{RMS}(t)$",
+            'vint_loss': "$v_\\mathrm{int}(t)$",
+            'vdepth_loss': "$v_\\mathrm{int}(z)$",
         }
         handles = {key: [] for key in LABEL_NAMES.keys()}
 

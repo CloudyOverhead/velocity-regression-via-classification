@@ -82,7 +82,11 @@ class CompareErrorSTD(Figure):
     )
 
     def plot(self, data):
-        fig, axs = pplt.subplots(ncols=3, figsize=[4.33, 2])
+        fig, axs = pplt.subplots(
+            ncols=3,
+            figheight=2,
+            journal='cageo1.5',
+        )
         keys = [
             'ErrorsSTD_RCNN2DRegressor',
             'ErrorsSTD_RCNN2DClassifier',
@@ -116,7 +120,7 @@ class CompareErrorSTD(Figure):
         vmin, vmax = dataset.model.properties['vp']
         axs.format(
             abc='(a)',
-            xlabel="Confidence metric (m/s)",
+            xlabel="Mistrust metric (m/s)",
             ylabel="Absolute error (m/s)",
             xscale=FuncScale(a=vmax-vmin, decimals=0),
             yscale=FuncScale(a=vmax-vmin, decimals=0),

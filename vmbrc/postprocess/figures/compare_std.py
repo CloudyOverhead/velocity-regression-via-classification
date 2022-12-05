@@ -11,20 +11,16 @@ from vmbrc.architecture import (
 )
 from ..catalog import catalog, Figure, Metadata, CompoundMetadata
 from .predictions import Predictions, Statistics, SelectExample, read_all
+from ..format import HandlerTupleVertical
 
 TOINPUTS = ['shotgather']
 TOOUTPUTS = ['ref', 'vrms', 'vint', 'vdepth']
 
-COLOR_CYCLE = [
-    "#78b98f", "#b11478", "#b3e61c", "#bf28e8",
-    "#3ff44c", "#e18af4", "#1b511d", "#f7767d",
-    "#4ba40b", "#57377e", "#eac328", "#4856f3",
-    "#dd750e", "#20d8fd", "#9f2114", "#38f0ac",
-]
-COLOR_CYCLE = pplt.Cycle(color=COLOR_CYCLE)
-
 QTY_ENSEMBLE = 16
 
+P_MIN = -4
+P_MAX = 0
+ALPHA = .2
 
 params = Hyperparameters1D(is_training=False)
 params.batch_size = 2
@@ -118,8 +114,9 @@ class CompareSTD(Figure):
 
         fig, axs = pplt.subplots(
             nrows=1,
-            ncols=6,
-            figsize=[7.6, 6],
+            ncols=5,
+            figheight=6,
+            journal='cageo2',
             sharey=True,
             sharex=True,
         )
@@ -137,24 +134,19 @@ class CompareSTD(Figure):
         self.plot_std_classifier(ax, d)
 
         ax = axs[2]
-        with pplt.rc.context({'axes.prop_cycle': COLOR_CYCLE}):
-            for i in range(QTY_ENSEMBLE):
-                d = data[f'SelectExample_Article1D_Classifier_{i}_10']
-                self.plot_std_classifier(ax, d, alpha_std=.0, show_prob=False)
+        for i in range(QTY_ENSEMBLE):
+            d = data[f'SelectExample_Article1D_Classifier_{i}_10']
+            self.plot_std_classifier(
+                ax, d, alpha_median=ALPHA, alpha_std=ALPHA, show_prob=False,
+            )
+        d = data['SelectExample_Article1D_Classifier_10']
+        self.plot_std_classifier(ax, d, show_prob=False)
 
         ax = axs[3]
-        with pplt.rc.context({'axes.prop_cycle': COLOR_CYCLE}):
-            for i in range(QTY_ENSEMBLE):
-                d = data[f'SelectExample_Article1D_Classifier_{i}_10']
-                self.plot_std_classifier(
-                    ax, d, alpha_median=.0, alpha_std=.2, show_prob=False,
-                )
-
-        ax = axs[4]
         d = data['SelectExample_Article1D_Classifier_10']
         self.plot_std_classifier(ax, d)
 
-        ax = axs[5]
+        ax = axs[4]
         d = data['SelectExample_Article1D_Regressor_10']
         v = d['preds/vint']
         v = v[:, 0, :, 0]
@@ -162,18 +154,28 @@ class CompareSTD(Figure):
         std = std[:, 0, :, 0]
         v, _ = meta_output.postprocess(v)
         std *= vmax - vmin
-        line = ax.plot(v, y)
-        color = line[0].get_color()
-        ax.plot(v-std, y, alpha=.5, lw=1, c=color)
-        ax.plot(v+std, y, alpha=.5, lw=1, c=color)
+        ax.plot(v, y, lw=1, c='tab:blue')
+        std_kwargs = dict(lw=1, c='tab:orange', ls='--')
+        ax.plot(v-std, y, **std_kwargs)
+        ax.plot(v+std, y, **std_kwargs)
+        for i in range(QTY_ENSEMBLE):
+            d = data[f'SelectExample_Article1D_Regressor_{i}_10']
+            v = d['preds/vint']
+            v = v[:, 0, :, 0]
+            v, _ = meta_output.postprocess(v)
+            ens_kwargs = dict(lw=1, alpha=ALPHA, c='tab:blue')
+            ax.plot(v, y, **ens_kwargs)
 
         y_start = np.argmax(label != label[0]) - len(label)//100*10
         dt = dataset.acquire.dt * dataset.acquire.resampling
-        fig.colorbar(
+        ticks = np.arange(P_MIN, P_MAX+1)
+        cbar = fig.colorbar(
             axs[1].images[0],
-            label="Logarithmic probability $\\mathrm{log}(p)$ (―)",
+            label="$p(v_\\mathrm{int}(t), t)$ (%)",
             loc='r',
+            ticks=ticks,
         )
+        cbar.ax.set_yticklabels(100*10.**ticks)
         axs.format(
             abc='(a)',
             xlabel="Interval velocity (m/s)",
@@ -184,6 +186,20 @@ class CompareSTD(Figure):
         )
         for ax in axs:
             ax.format(yreverse=True)
+        handles = [
+            axs[4].lines[0],
+            axs[4].lines[1],
+            (axs[2].lines[0], axs[2].lines[-1]),
+        ]
+        labels = ["Median / Average", "Confidence interval", "Individual NNs"]
+        fig.legend(
+            handles,
+            labels,
+            loc='top',
+            handlelength=4,
+            ncols=3,
+            handler_map={tuple: HandlerTupleVertical()},
+        )
 
         self.compute_rmses(data)
 
@@ -201,17 +217,32 @@ class CompareSTD(Figure):
             ax.imshow(
                 np.log10(p[:, 0]),
                 aspect='auto',
-                cmap='Greys',
+                cmap='magma',
                 extent=extent,
                 origin='upper',
-                vmin=-7,
-                vmax=0
+                vmin=P_MIN,
+                vmax=P_MAX,
             )
         median, std = meta_output.postprocess(p)
-        line = ax.plot(median, y, lw=2, alpha=alpha_median)
-        color = line[0].get_color()
-        ax.plot(median-std, y, alpha=alpha_std, lw=1, c=color)
-        ax.plot(median+std, y, alpha=alpha_std, lw=1, c=color)
+        c = 'w' if show_prob else 'tab:blue'
+        ax.plot(median, y, lw=1, alpha=alpha_median, c=c)
+        c = 'w' if show_prob else 'tab:orange'
+        ax.plot(
+            median-std,
+            y,
+            lw=1,
+            alpha=alpha_std,
+            c=c,
+            ls='--',
+        )
+        ax.plot(
+            median+std,
+            y,
+            lw=1,
+            alpha=alpha_std,
+            c=c,
+            ls='--',
+        )
 
     def compute_rmses(self, data):
         # Ensemble of regressors and ensemble of classifiers
@@ -234,7 +265,6 @@ class CompareSTD(Figure):
         self.compute_rmse_between(
             data, 'Classifier_*', 'Classifier_*', use_std=True,
         )
-
 
     def compute_rmse_between(self, data, key1, key2, use_std=False):
         d1 = self.get_rmse_data(data, key1, use_std=use_std)

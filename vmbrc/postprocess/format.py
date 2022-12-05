@@ -4,7 +4,9 @@
 
 from matplotlib import pyplot as plt
 from matplotlib.ticker import AutoLocator
+from matplotlib.legend_handler import HandlerTuple
 import proplot as pplt
+from proplot.figure import JOURNAL_SIZES
 import numpy as np
 
 
@@ -44,6 +46,36 @@ class FuncLocator(AutoLocator):
 pplt.FuncScale = FuncScale
 
 
+class HandlerTupleVertical(HandlerTuple):
+    """Copied from gyger (https://stackoverflow.com/a/40363560)"""
+
+    def create_artists(
+        self, legend, orig_handle, xdescent, ydescent, width, height,
+        fontsize, trans,
+    ):
+        numlines = len(orig_handle)
+        handler_map = legend.get_legend_handler_map()
+        height_y = (height / numlines)
+        leglines = []
+        for i, handle in enumerate(orig_handle):
+            handler = legend.get_legend_handler(handler_map, handle)
+            legline = handler.create_artists(
+                legend, handle, xdescent, (2*i+1)*height_y, width, 2*height,
+                fontsize, trans,
+            )
+            leglines.extend(legline)
+        return leglines
+
+
+JOURNAL_SIZES.update(
+    {
+        'cageo1': '90mm',
+        'cageo1.5': '140mm',
+        'cageo2': '190mm',
+    }
+)
+
+
 plt.rc('text', usetex=True)
 plt.rc('text.latex', preamble=r'\usepackage{siunitx}')
 plt.rcParams['text.usetex'] = True
@@ -54,12 +86,15 @@ plt.rcParams['font.style'] = "normal"
 plt.rcParams['font.variant'] = "normal"
 plt.rcParams['font.weight'] = "medium"
 plt.rcParams['font.stretch'] = "normal"
-plt.rcParams['font.size'] = 8
+plt.rcParams['font.size'] = 7
+plt.rcParams['font.serif'] = "Times New Roman"
+plt.rcParams['mathtext.fontset'] = "custom"
 # plt.rcParams['font.serif'] = (
 #     DejaVu Serif, Bitstream Vera Serif, New Century Schoolbook,
 #     Century Schoolbook L, Utopia, ITC Bookman, Bookman, Nimbus Roman No9 L,
 #     Times New Roman, Times, Palatino, Charter, serif,
 # )
+plt.rcParams['font.sans-serif'] = "Arial"
 # plt.rcParams['font.sans-serif'] = (
 #     DejaVu Sans, Bitstream Vera Sans, Lucida Grande, Verdana, Geneva, Lucid,
 #     Arial, Helvetica, Avant Garde, sans-serif,

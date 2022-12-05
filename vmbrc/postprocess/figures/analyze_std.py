@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 from os.path import join, curdir
-from itertools import product
 
 import numpy as np
 import proplot as pplt
@@ -10,7 +9,7 @@ from matplotlib.colors import Normalize
 from GeoFlow.SeismicUtilities import vdepth2time as vdepth_to_vint
 
 from vmbrc.datasets import (
-    AnalysisDip, AnalysisFault, AnalysisDiapir, AnalysisNoise,
+    AnalysisDip, AnalysisFault, AnalysisNoise,
 )
 from vmbrc.architecture import RCNN2DClassifier, Hyperparameters1D
 from ..catalog import catalog, Figure
@@ -19,11 +18,14 @@ from .predictions import Predictions, read_all
 TOINPUTS = ['shotgather']
 TOOUTPUTS = ['ref', 'vrms', 'vint', 'vdepth']
 PARAMS = Hyperparameters1D(is_training=False)
-PARAMS.batch_size = 1
+PARAMS.batch_size = 4
 LOGDIR = join('logs', 'classifier', '0')
 SAVEDIR = "Classifier_0"
 
-CLIP = 5E-1
+CLIP = 3E-1
+
+P_MIN = -4
+P_MAX = 0
 
 
 def map_cmap(cmap, vmin, vmax):
@@ -31,7 +33,12 @@ def map_cmap(cmap, vmin, vmax):
 
 
 class Analyze(Figure):
-    G_CMAP = pplt.DiscreteColormap(('dodgerblue', 'tan'))
+    G_CMAP = pplt.Colormap(
+        pplt.Colormap(['#2d00b2']),
+        pplt.Colormap('magma').truncate(.93, .83),
+        listmode='perceptual',
+        ratios=[1, 2],
+    )
     SAVEDIR = SAVEDIR
 
     def generate(self, gpus):
@@ -48,13 +55,13 @@ class Analyze(Figure):
         else:
             ncols = ncols[0]
 
-        width = ncols * 3.33
-        height = 2.5 * nrows
+        height = 2.4 * nrows
         wspace = ((0, 0, None)*ncols)[:-1]
         fig, axs = pplt.subplots(
             nrows=nrows,
             ncols=ncols*3,
-            figsize=[width, height],
+            figheight=height,
+            journal='cageo1.5' if ncols == 1 else 'cageo2',
             wspace=wspace,
             sharey=True,
             spanx=False,
@@ -87,7 +94,13 @@ class Analyze(Figure):
                 vmax=label_2d.max()+.001*abs(label_2d.max()),
             )
             label_1d, _ = v_meta.postprocess(label_1d)
-            p_ax.plot(label_1d, y)
+            p_ax.plot(
+                label_1d,
+                y,
+                label='Ground truth',
+                c='r',
+                lw=1,
+            )
             self.plot_std_classifier(p_ax, pred)
             input = input[:, :, -1, 0]
             input /= 1000
@@ -95,35 +108,46 @@ class Analyze(Figure):
                 input,
                 aspect='auto',
                 cmap='Greys',
-                vmin=0,
+                vmin=-CLIP,
                 vmax=CLIP,
             )
 
         self.add_colorbars(fig, axs)
         axs.format(
             ylabel="$t$ (s)",
-            yscale=pplt.FuncScale(a=dt, decimals=1),
+            yscale=pplt.FuncScale(a=dt, decimals=0),
             yreverse=True,
             xrotation=90,
+            ylim=[5/dt, 2/dt],
+            ylocator=1/dt,
         )
         for ax in p_axs:
             ax.format(
-                xlabel="Interval\nvelocity\n(m/s)",
+                xlabel="$v_\\mathrm{int}$ (km/s)",
                 xlim=[vmin, vmax],
+                xscale=pplt.FuncScale(a=1/1000, decimals=0),
+                grid=False,
+                gridminor=False,
             )
         dh = dataset.model.dh
         gmin = dataset.acquire.gmin * dh
         dg = dataset.acquire.dg * dh
-        for ax in [*g_axs]:
+        for ax in g_axs:
             ax.format(
                 xlabel="$x$ (km)",
-                xscale=pplt.FuncScale(a=dh/1000),
+                xscale=pplt.FuncScale(a=dh/1000, decimals=0),
+                xlocator=4000/dh,
+                grid=False,
+                gridminor=False,
             )
-        for ax in [*i_axs]:
+        for ax in i_axs:
             ax.format(
                 xlabel="$h$ (km)",
-                xscale=pplt.FuncScale(a=dg/1000, b=gmin/1000),
+                xscale=pplt.FuncScale(a=dg/1000, b=gmin/1000, decimals=0),
+                grid=False,
+                gridminor=False,
             )
+        fig.legend(p_axs[0].lines, loc='top')
         for ax in axs:
             ax.number = (ax.number+2) // 3
 
@@ -160,49 +184,49 @@ class Analyze(Figure):
             ax.imshow(
                 np.log10(data[:, 0]),
                 aspect='auto',
-                cmap='Greys',
+                cmap='magma',
                 extent=extent,
                 origin='upper',
-                vmin=-7,
-                vmax=0
+                vmin=P_MIN,
+                vmax=P_MAX,
             )
         median, std = meta_output.postprocess(data)
-        line = ax.plot(median, y, lw=2, alpha=alpha_median)
-        color = line[0].get_color()
-        ax.plot(median-std, y, alpha=alpha_std, lw=1, c=color)
-        ax.plot(median+std, y, alpha=alpha_std, lw=1, c=color)
+        COLOR = '.8'
+        ax.plot(
+            median,
+            y,
+            lw=1,
+            alpha=alpha_median,
+            c=COLOR,
+            label='Prediction',
+        )
+        ax.plot(median-std, y, alpha=alpha_std, lw=1, c=COLOR)
+        ax.plot(median+std, y, alpha=alpha_std, lw=1, c=COLOR)
         std = round(std.mean())
         ax.text(
-            .5, .90, f"{std} m/s",
+            .90, .97,
+            f"$\\bar{{\\sigma}}_\\mathrm{{int}}\\qty(t)$ = {std} m/s",
+            c='w',
             fontsize='small',
             weight='bold',
-            ha='center',
+            ha='right',
             va='top',
             transform=ax.transAxes,
         )
 
     def add_colorbars(self, fig, axs):
-        vs = self.get_2d_label(0)[[0, -1], 0]
-        vs = [int(np.around(v, -2)) for v in vs]
-        for v, y, align in zip(vs, [.9, .1], ['top', 'bottom']):
-            axs[0].text(
-                .5, y, f"{v} m/s",
-                fontsize='small',
-                weight='bold',
-                ha='center',
-                va=align,
-                transform=axs[0].transAxes,
-            )
         x = self.get_2d_label(0).shape[1] // 2
         g_axs = [ax for i in range(0, axs.shape[1], 3) for ax in axs[:, i]]
         for g_ax in g_axs:
             g_ax.axvline(x, 0, 1, lw=.5, c='w', ls=(0, (5, 5)))
-        fig.colorbar(
+        ticks = np.arange(P_MIN, P_MAX+1)
+        cbar = fig.colorbar(
             axs[0, 1].images[0],
-            label="Logarithmic\nprobability\n$\\mathrm{log}(p)$ (―)",
-            loc='r',
-            row=1,
+            label="$p(v_\\mathrm{int}(t), t)$ (%)",
+            loc='b',
+            ticks=ticks,
         )
+        cbar.ax.set_xticklabels(100*10.**ticks)
 
 
 class AnalyzeDip(Analyze):
@@ -237,25 +261,6 @@ class AnalyzeFault(Analyze):
     def plot(self, *args, **kwargs):
         fig, axs = super().plot(*args, **kwargs)
         axs[:, 0].format(abc='(a)')
-        axs[:, 3].format(abc='(a)')
-
-
-class AnalyzeDiapir(Analyze):
-    dataset = AnalysisDiapir(PARAMS)
-    Metadata = Predictions.construct(
-        nn=RCNN2DClassifier,
-        params=PARAMS,
-        logdir=LOGDIR,
-        savedir=SAVEDIR,
-        dataset=dataset,
-        do_generate_dataset=True,
-        unique_suffix='diapir',
-    )
-
-    def plot(self, *args, **kwargs):
-        fig, axs = super().plot(*args, **kwargs)
-        axs[:, 0].format(abc='(a)')
-        axs[:, 3].format(abc='(a)')
 
 
 class AnalyzeNoise(Analyze):
@@ -281,19 +286,27 @@ class AnalyzeNoise(Analyze):
         g_axs = [axs[i, j] for j in range(0, ncols*3, 3) for i in range(nrows)]
 
         dh = self.dataset.model.dh
-        dg = self.dataset.acquire.dg
-        gmin = self.dataset.acquire.gmin
+        dg = self.dataset.acquire.dg * dh
+        gmin = self.dataset.acquire.gmin * dh
         for ax in g_axs:
             ax.format(
-                xlabel="$h$ (m)",
-                xscale=pplt.FuncScale(a=dg*dh, b=gmin*dh, decimals=0),
+                xlabel="$h$ (km)",
+                xscale=pplt.FuncScale(a=dg/1000, b=gmin/1000, decimals=0),
+                grid=False,
+                gridminor=False,
+                xreverse=True,
             )
+            _, vmax = ax.images[0].get_clim()
+            ax.images[0].set_clim(-CLIP*vmax, CLIP*vmax)
         axs[:, 0].format(abc='(a)')
+
+        dt = self.dataset.acquire.dt * self.dataset.acquire.resampling
+        axs.format(ylim=[8/dt, 2/dt])
 
         gs = axs[0].get_gridspec()
         for ax in axs[:, 2]:
             fig.delaxes(ax)
-        gs.update(width_ratios=[1, 1, 0], wspace=[0, 0, 1])
+        gs.update(width_ratios=[1, 1, 0], wspace=[0, 1])
 
     def get_2d_label(self, seed):
         seed += self.dataset.trainsize
@@ -308,13 +321,17 @@ class AnalyzeNoise(Analyze):
         return shotgather[..., 0, 0]
 
     def add_colorbars(self, fig, axs):
-        fig.colorbar(
+        ticks = np.arange(P_MIN, P_MAX+1)
+        cbar = fig.colorbar(
             axs[0, 1].images[0],
-            label="Logarithmic\nprobability\n$\\mathrm{log}(p)$ (―)",
-            loc='r',
-            row=1,
+            label="$p(v_\\mathrm{int}(t), t)$ (%)",
+            loc='b',
+            ticks=ticks,
         )
+        ticks = 100*10.**ticks
+        ticks = [f'{float(f"{tick:.1g}"):g}' for tick in ticks]
+        cbar.ax.set_xticklabels(ticks)
 
 
-for figure in [AnalyzeDip, AnalyzeFault, AnalyzeDiapir, AnalyzeNoise]:
+for figure in [AnalyzeNoise, AnalyzeDip, AnalyzeFault]:
     catalog.register(figure)
