@@ -205,7 +205,7 @@ class Analyze(Figure):
         std = round(std.mean())
         ax.text(
             .90, .97,
-            f"$\\bar{{\\sigma}}_\\mathrm{{int}}\\qty(t)$ = {std} m/s",
+            f"$\\bar{{\\sigma}}_\\mathrm{{int}}(t)$ = {std} m/s",
             c='w',
             fontsize='small',
             weight='bold',
