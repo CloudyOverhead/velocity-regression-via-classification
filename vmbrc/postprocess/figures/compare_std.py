@@ -171,7 +171,7 @@ class CompareSTD(Figure):
         ticks = np.arange(P_MIN, P_MAX+1)
         cbar = fig.colorbar(
             axs[1].images[0],
-            label="$p(v_\\mathrm{int}(t), t)$ (%)",
+            label="$p(v, t)$ (%)",
             loc='r',
             ticks=ticks,
         )

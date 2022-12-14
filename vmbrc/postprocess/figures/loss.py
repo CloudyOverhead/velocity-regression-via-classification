@@ -11,7 +11,6 @@ from matplotlib.colors import TABLEAU_COLORS
 
 from vmbrc.architecture import Hyperparameters1D
 from ..catalog import catalog, Figure, Metadata
-from ..format import HandlerTupleVertical
 
 TABLEAU_COLORS = list(TABLEAU_COLORS)
 
@@ -55,12 +54,12 @@ class Loss(Figure):
     def plot(self, data):
         _, ax = pplt.subplots(
             figheight=5,
-            journal='cageo2',
+            journal='cageo1',
         )
         epochs = self.params.epochs
         steps_per_epoch = self.params.steps_per_epoch
         LABEL_NAMES = {
-            'vint_loss': "$v_\\mathrm{int}(t)$",
+            'vint_loss': "$v$",
         }
         handles = {key: [] for key in LABEL_NAMES.keys()}
 

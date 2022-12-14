@@ -50,18 +50,17 @@ class Analyze(Figure):
         dataset = self.dataset
         features = dataset.model.features
         nrows, *ncols = (len(values) for values in features.values())
-        if not ncols:
-            ncols = 1
-        else:
-            ncols = ncols[0]
+        ncols = 1
 
-        height = 2.4 * nrows
+        height = f"{55*nrows}mm"
         wspace = ((0, 0, None)*ncols)[:-1]
+        wratios = (1, 2, 1) * ncols
         fig, axs = pplt.subplots(
             nrows=nrows,
             ncols=ncols*3,
             figheight=height,
-            journal='cageo1.5' if ncols == 1 else 'cageo2',
+            journal='cageo1',
+            wratios=wratios,
             wspace=wspace,
             sharey=True,
             spanx=False,
@@ -99,7 +98,7 @@ class Analyze(Figure):
                 y,
                 label='Ground truth',
                 c='r',
-                lw=1,
+                lw=2,
             )
             self.plot_std_classifier(p_ax, pred)
             input = input[:, :, -1, 0]
@@ -123,7 +122,7 @@ class Analyze(Figure):
         )
         for ax in p_axs:
             ax.format(
-                xlabel="$v_\\mathrm{int}$ (km/s)",
+                xlabel="$v$ (km/s)",
                 xlim=[vmin, vmax],
                 xscale=pplt.FuncScale(a=1/1000, decimals=0),
                 grid=False,
@@ -205,7 +204,7 @@ class Analyze(Figure):
         std = round(std.mean())
         ax.text(
             .90, .97,
-            f"$\\bar{{\\sigma}}_\\mathrm{{int}}(t)$ = {std} m/s",
+            f"$\\bar{{\\sigma}}$ = {std} m/s",
             c='w',
             fontsize='small',
             weight='bold',
@@ -229,11 +228,12 @@ class Analyze(Figure):
         ticks = np.arange(P_MIN, P_MAX+1)
         cbar = fig.colorbar(
             axs[0, 1].images[0],
-            label="$p(v_\\mathrm{int}(t), t)$ (%)",
-            loc='b',
+            label="$p(v, t)$ (%)",
+            row=1,
+            loc='r',
             ticks=ticks,
         )
-        cbar.ax.set_xticklabels(100*10.**ticks)
+        cbar.ax.set_yticklabels(100*10.**ticks)
 
 
 class AnalyzeDip(Analyze):
@@ -295,6 +295,7 @@ class AnalyzeNoise(Analyze):
         dh = self.dataset.model.dh
         dg = self.dataset.acquire.dg * dh
         gmin = self.dataset.acquire.gmin * dh
+        CLIP = 5E-1
         for ax in g_axs:
             ax.format(
                 xlabel="$h$ (km)",
@@ -313,7 +314,7 @@ class AnalyzeNoise(Analyze):
         gs = axs[0].get_gridspec()
         for ax in axs[:, 2]:
             fig.delaxes(ax)
-        gs.update(width_ratios=[1, 1, 0], wspace=[0, 1])
+        gs.update(width_ratios=[1, 3, 0], wspace=[0, 0, 1])
 
     def get_2d_label(self, seed):
         seed += self.dataset.trainsize
@@ -331,13 +332,14 @@ class AnalyzeNoise(Analyze):
         ticks = np.arange(P_MIN, P_MAX+1)
         cbar = fig.colorbar(
             axs[0, 1].images[0],
-            label="$p(v_\\mathrm{int}(t), t)$ (%)",
-            loc='b',
+            label="$p(v, t)$ (%)",
+            row=1,
+            loc='r',
             ticks=ticks,
         )
         ticks = 100*10.**ticks
         ticks = [f'{float(f"{tick:.1g}"):g}' for tick in ticks]
-        cbar.ax.set_xticklabels(ticks)
+        cbar.ax.set_yticklabels(ticks)
 
 
 for figure in [AnalyzeNoise, AnalyzeDip, AnalyzeFault]:

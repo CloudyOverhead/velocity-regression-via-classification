@@ -84,7 +84,7 @@ class CompareErrorSTD(Figure):
     def plot(self, data):
         fig, axs = pplt.subplots(
             ncols=3,
-            figheight=2,
+            figheight=3,
             journal='cageo1.5',
         )
         keys = [

@@ -94,7 +94,7 @@ class ErrorBins(Figure):
         )
 
         ax.format(
-            xlabel="$n_\\mathrm{bins}$ (―)",
+            xlabel="$n_v$ (―)",
             ylabel="RMSE (m/s)",
         )
         ax.legend(
