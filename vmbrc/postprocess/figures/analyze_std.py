@@ -314,7 +314,7 @@ class AnalyzeNoise(Analyze):
         gs = axs[0].get_gridspec()
         for ax in axs[:, 2]:
             fig.delaxes(ax)
-        gs.update(width_ratios=[1, 3, 0], wspace=[0, 0, 1])
+        gs.update(width_ratios=[1, 2, 0], wspace=[0, 0, 1])
 
     def get_2d_label(self, seed):
         seed += self.dataset.trainsize

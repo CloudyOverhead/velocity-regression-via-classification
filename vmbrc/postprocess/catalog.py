@@ -143,7 +143,7 @@ class Figure(Figure):
 
     @property
     def filename(self):
-        return f"FIG{catalog.index(self)+3}.pdf"
+        return f"FIG{catalog.index(self)+2}.pdf"
 
     @property
     def filepath(self):

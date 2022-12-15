@@ -8,6 +8,7 @@ from functools import partial
 
 import numpy as np
 from skimage.measure import compare_ssim as ssim
+from tensorflow.keras.losses import categorical_crossentropy
 
 from vmbrc.__main__ import main as global_main
 from ..catalog import Metadata
@@ -197,7 +198,7 @@ def combine_predictions(dataset, logdir, savedir):
 
 
 class Statistics(Metadata):
-    colnames = ['similarities', 'rmses']
+    colnames = ['similarities', 'rmses', 'entropies']
 
     @classmethod
     def construct(cls, *, nn, dataset, savedir, unique_suffix=None):
@@ -222,9 +223,19 @@ class Statistics(Metadata):
 
         similarities = np.array([])
         rmses = np.array([])
+        entropies = np.array([])
         for current_labels, current_weights, current_preds in zip(
             labels["vint"], weights["vint"], preds["vint"],
         ):
+            n_bins = current_preds.shape[-2]
+            if n_bins > 1:
+                bins = np.linspace(0, 1, n_bins+1)
+                idx = np.digitize(current_labels, bins) - 1
+                ni, nj = current_labels.shape[:2]
+                i, j = np.meshgrid(range(ni), range(nj), indexing='ij')
+                p = current_preds[i, j, idx, 0]
+                entropy = -np.mean(np.log10(p)*current_weights)
+                entropies = np.append(entropies, entropy)
             current_labels, _ = meta_output.reduce(current_labels)
             current_labels *= current_weights
             current_preds, _ = meta_output.reduce(current_preds)
@@ -237,18 +248,21 @@ class Statistics(Metadata):
         vmin, vmax = dataset.model.properties['vp']
         rmses *= vmax - vmin
 
-        metrics = [similarities, rmses]
+        metrics = [similarities, rmses, entropies]
         for name, metric in zip(self.colnames, metrics):
             self[name] = metric
 
     def print_statistics(self):
         similarities = self['similarities']
         rmses = self['rmses']
+        entropies = self['entropies']
         print(f"Statistics for directory {self.savedir}.")
         print("Average SSIM:", np.mean(similarities))
         print("Standard deviation on SSIM:", np.std(similarities))
         print("Average RMSE:", np.mean(rmses))
         print("Standard deviation on RMSE:", np.std(rmses))
+        print("Average cross-entropy:", np.mean(entropies))
+        print("Standard deviation on cross-entropy:", np.std(entropies))
 
 
 def read_all(dataset, savedir=None, toinputs=TOINPUTS, tooutputs=TOOUTPUTS):

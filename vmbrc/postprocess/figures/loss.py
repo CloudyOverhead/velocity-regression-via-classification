@@ -53,7 +53,7 @@ class Loss(Figure):
 
     def plot(self, data):
         _, ax = pplt.subplots(
-            figheight=5,
+            figheight=3,
             journal='cageo1',
         )
         epochs = self.params.epochs

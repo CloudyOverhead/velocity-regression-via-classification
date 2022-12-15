@@ -3,8 +3,6 @@
 from os.path import join
 from copy import deepcopy
 
-import proplot as pplt
-
 from vmbrc.datasets import Article1D
 from vmbrc.architecture import RCNN2DClassifier, Hyperparameters1D
 from ..catalog import catalog, Figure, CompoundMetadata
@@ -33,18 +31,15 @@ CompoundBinsPredictions = CompoundMetadata.combine(
         for i, params in enumerate(bins_params)
     )
 )
-
-
 CompoundBinsStatistics = CompoundMetadata.combine(
     *(
         Statistics.construct(
             nn=RCNN2DClassifier,
-            savedir=f'Bins_{i}{suffix}',
+            savedir=f'Bins_{i}',
             dataset=Article1D(params),
-            unique_suffix=f"Bins_{i}{suffix}",
+            unique_suffix=f"Bins_{i}",
         )
         for i, params in enumerate(bins_params)
-        for suffix in ['', '_0', '_1', '_2', '_3']
     )
 )
 
@@ -54,54 +49,15 @@ class ErrorBins(Figure):
         CompoundBinsPredictions,
         CompoundBinsStatistics,
     )
+    filename = 'error_bins'
 
     def plot(self, data):
-        _, ax = pplt.subplots(
-            nrows=1,
-            ncols=1,
-            figheight=3,
-            journal='cageo1',
-        )
+        for key, d in data.items():
+            if 'Statistics' in key:
+                d.print_statistics()
 
-        qty_bins = []
-        line = []
-        for i, params in enumerate(bins_params):
-            key = f"Statistics_RCNN2DClassifier_Bins_{i}"
-            rmses = data[key]['rmses']
-            qty_bins.append(params.decode_bins)
-            line.append(rmses.mean())
-        ax.plot(
-            qty_bins,
-            line,
-            ls=':',
-            label="Ensemble",
-        )
-
-        qty_bins = []
-        scatter = []
-        for i, params in enumerate(bins_params):
-            for j in range(4):
-                key = f"Statistics_RCNN2DClassifier_Bins_{i}_{j}"
-                rmses = data[key]['rmses']
-                qty_bins.append(params.decode_bins)
-                scatter.append(rmses.mean())
-        ax.scatter(
-            qty_bins,
-            scatter,
-            m='o',
-            ms=4,
-            label="Individual NNs",
-        )
-
-        ax.format(
-            xlabel="$n_v$ (―)",
-            ylabel="RMSE (m/s)",
-        )
-        ax.legend(
-            loc='lower center',
-            bbox_to_anchor=(.5, 1.),
-            frame=False,
-        )
+    def save(self, show):
+        pass
 
 
 catalog.register(ErrorBins)
